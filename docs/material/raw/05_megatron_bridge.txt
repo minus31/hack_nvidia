@@ -1,0 +1,269 @@
+Megatron-Bridge — Nemotron 3 Nano SFT 가이드
+Megatron-Bridge — NeMo Megatron Bridge는 NeMo 프레임워크 내의 PyTorch 네이티브 라이브러리로, 잘 알려진 LLM 및 VLM 모델에 대한 사전 학습(pretraining), SFT(지도 미세 조정), LoRA를 지원합니다.
+Docs: docs.nvidia.com/nemo/megatron-bridge/latest/ Github: github.com/NVIDIA-NeMo/Megatron-Bridge
+Track B 파이프라인 예시
+ NeMo Data Designer 등을 활용한 데이터 전처리
+        ↓
+   Megatron Bridge (SFT / LoRA)          ← 이 탭
+   ├── HF 체크포인트 → Megatron 변환
+   └── Supervised Fine-Tuning
+        ↓
+   파인튜닝된 Nemotron Nano CKPT (HF 또는 MCore 형식)
+        ↓
+   NeMo RL 학습 (다음 탭)
+1. 설치 & 환경 설정
+1.1 NeMo Framework 컨테이너 실행
+bash
+Copy
+# Nemotron 3 Nano 전용 컨테이너 (권장)
+docker run --rm -it -w /workdir -v $(pwd):/workdir \
+  --entrypoint bash \
+  --gpus all --shm-size=64g \
+  nvcr.io/nvidia/nemo:25.11.nemotron_3_nano
+1.2 환경 변수 설정
+bash
+Copy
+export HF_TOKEN=<your_hf_access_token>
+export HF_HOME=/workspace/hf_cache
+export SAVE_DIR=/workspace/checkpoints
+export WANDB_API_KEY=<your_wandb_key>
+2. HuggingFace ↔ Megatron 체크포인트 변환
+
+Megatron-Bridge는 HF ↔ MCore 간 레이어 이름 매핑(weight renaming)과 shape 변환(reshaping/sharding)을 자동으로 처리하는 변환 레이어입니다. AutoBridge는 모델 아키텍처를 자동 감지해 알맞은 브릿지를 선택하므로, 모델별 변환 로직을 직접 작성할 필요가 없습니다.
+
+2.1 AutoBridge API 요약
+메서드	설명
+AutoBridge.from_hf_pretrained(path)	HF 모델에서 Bridge 인스턴스 생성
+AutoBridge.import_ckpt(hf_path, megatron_path)	HF 체크포인트를 MCore 포맷으로 디스크에 변환/저장
+bridge.to_megatron_provider()	Megatron 모델 프로바이더 생성 (TP/PP 병렬 설정 포함)
+bridge.save_hf_pretrained(model, path)	학습된 모델을 HF 형식으로 저장
+bridge.export_ckpt(megatron_path, hf_path)	MCore 체크포인트를 HF 포맷으로 디스크에 변환/저장
+bridge.export_hf_weights(model)	Streaming 방식으로 weight only 저장
+AutoBridge.list_supported_models()	지원 모델 목록 출력
+2.2 Nemotron Nano 체크포인트 변환
+python
+Copy
+from megatron.bridge import AutoBridge
+
+print(AutoBridge.list_supported_models())
+
+# HuggingFace → Megatron 변환
+AutoBridge.import_ckpt(
+    "nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B-BF16",
+    "./megatron_checkpoints/nemotron_nano"
+)
+print("변환 완료: ./megatron_checkpoints/nemotron_nano")
+bash
+Copy
+python examples/conversion/convert_checkpoints.py export  \
+--hf-model $HF_MODEL_ID  \
+--megatron-path /path/to/trained/megatron/ckpt \
+--hf-path /path/to/output/hf/ckpt
+2.3 Megatron 모델 프로바이더 생성 (예시)
+python
+Copy
+from megatron.bridge import AutoBridge
+
+bridge = AutoBridge.from_hf_pretrained(
+    "nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B-BF16",
+    trust_remote_code=True
+)
+provider = bridge.to_megatron_provider()
+
+provider.tensor_model_parallel_size   = 1
+provider.pipeline_model_parallel_size = 1
+provider.finalize()
+
+model = provider.provide_distributed_model(wrap_with_ddp=False)
+print("Megatron 모델 로드 완료")
+
+Python API 기반으로 직접 학습 루프를 구성하실 때 참고할 수 있습니다.
+
+3. Full SFT (Supervised Fine-Tuning)
+3.1 SFT 설정 구성
+
+Megatron-Bridge의 ConfigContainer로 학습에 필요한 모든 설정을 하나의 객체로 구성합니다.
+
+python
+Copy
+from megatron.bridge import AutoBridge
+from megatron.bridge.training.config import ConfigContainer, TrainingConfig, CheckpointConfig
+from megatron.bridge.data.builders.hf_dataset import HFDatasetConfig
+from megatron.core.optimizer import OptimizerConfig
+
+# 브릿지 및 모델 프로바이더 생성
+bridge = AutoBridge.from_hf_pretrained(
+    "nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B-BF16",
+    trust_remote_code=True,
+)
+provider = bridge.to_megatron_provider()
+provider.tensor_model_parallel_size   = 1
+provider.pipeline_model_parallel_size = 1
+provider.finalize()
+
+# SFT 설정 구성
+sft_config = ConfigContainer(
+    model=provider,
+    train=TrainingConfig(
+        train_iters=1000,
+        global_batch_size=32,
+        micro_batch_size=1,
+        eval_interval=100,
+        eval_iters=10,
+        seq_length=4096,
+    ),
+    optimizer=OptimizerConfig(
+        optimizer="adam",
+        lr=5e-6,
+        min_lr=5e-7,
+        weight_decay=0.01,
+        bf16=True,
+        use_distributed_optimizer=True,
+    ),
+    checkpoint=CheckpointConfig(
+        pretrained_checkpoint="./megatron_checkpoints/nemotron_nano",
+        save="./checkpoints/nemotron_nano_sft",
+        save_interval=200,
+        load_optimizer_state=False,
+    ),
+    data=HFDatasetConfig(
+        train_data_path="./output/korean_math_cot_sft.jsonl",
+        val_data_path="./output/korean_math_cot_sft.jsonl",
+        tokenizer="nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B-BF16",
+        seq_length=4096,
+    ),
+)
+3.2 공식 Recipe 함수 사용
+
+Megatron-Bridge는 Nemotron 3 Nano에 최적화된 Recipe 함수를 제공합니다. 직접 ConfigContainer를 구성하는 대신 nemotron_3_nano_sft_config()로 기본 설정을 가져온 뒤 필요한 부분만 오버라이드할 수 있습니다.
+
+python
+Copy
+from megatron.bridge.recipes.nemotronh.nemotron_3_nano import nemotron_3_nano_sft_config
+from megatron.bridge.training import finetune
+
+# 공식 Nano SFT 레시피 로드 (TP=1, PP=1, EP=8, seq_len=2048 기본값)
+config = nemotron_3_nano_sft_config()
+
+# 필요한 설정만 오버라이드
+config.train.train_iters       = 100
+config.train.global_batch_size = 128
+config.scheduler.lr_warmup_iters = 10
+config.checkpoint.pretrained_checkpoint = "./megatron_checkpoints/nemotron_nano"
+config.checkpoint.save = "./checkpoints/nemotron_nano_sft"
+
+# 학습 시작
+finetune(config)
+
+Recipe 기본값: nemotron_3_nano.py
+
+3.3 공식 Nano SFT 레시피
+
+Megatron-Bridge에서 제공하는 Nemotron 3 Nano 전용 학습 스크립트를 바로 실행할 수 있습니다.
+
+bash
+Copy
+torchrun --nproc-per-node=8 examples/models/nemotron_3/finetune_nemotron_3_nano.py \
+train.global_batch_size=128 \
+train.train_iters=100 \
+scheduler.lr_warmup_iters=10 \
+checkpoint.pretrained_checkpoint=/path/to/output/megatron/ckpt
+
+참고:
+
+기본 병렬화 설정: TP=1, EP=8, PP=1, CP=1. 최소 2개의 H100 노드(GPU 16개)가 필요합니다. 병렬화 config 수정이 필요할 수 있습니다.
+기본 데이터셋으로 SQuAD를 사용합니다. 커스텀 데이터셋 사용 방법은 3.4를 참고하세요.
+3.4 커스텀 데이터셋 사용
+
+기본 SQuAD 대신 커스텀 JSONL 데이터셋을 사용하려면 FinetuningDatasetConfig로 데이터 경로를 교체합니다.
+
+python
+Copy
+from megatron.bridge.training.config import FinetuningDatasetConfig
+
+# Recipe config에서 dataset만 교체
+config = nemotron_3_nano_sft_config()
+config.dataset = FinetuningDatasetConfig(
+    dataset_root="./data/my_dataset/",
+    seq_length=config.model.seq_length,
+)
+
+데이터 형식: 데이터셋 형식은 NeMo Data Designer 섹션의 Step 5: 데이터셋 내보내기 항목을 참고하세요.
+
+데이터 전송: GPU 서버로의 데이터 전송 방법은 NeMo Data Designer 섹션의 Step 6: HuggingFace Hub에 업로드 항목을 참고하세요.
+
+4. LoRA — 경량 파라미터 파인튜닝
+4.1 LoRA 설정
+python
+Copy
+from megatron.bridge.training.config import ConfigContainer
+from megatron.bridge.peft.lora import LoRA
+
+config = ConfigContainer(
+    # ... other required configurations
+    peft=LoRA(
+        target_modules=["linear_qkv", "linear_proj", "linear_fc1", "linear_fc2"],
+        dim=16,
+        alpha=32,
+        dropout=0.1,
+    ),
+    checkpoint=CheckpointConfig(
+        pretrained_checkpoint="/path/to/pretrained/checkpoint",
+        save="/path/to/peft/checkpoints",
+    ),
+)
+
+기존 SFT config에 위의 내용을 LoRA 전용 config를 추가합니다.
+
+4.2 LoRA 파인튜닝 실행
+
+LoRA 파인튜닝을 활성화하려면 스크립트에 --peft lora를 전달하세요.
+
+bash
+Copy
+torchrun --nproc-per-node=8 examples/models/nemotron_3/finetune_nemotron_3_nano.py \
+--peft lora \
+train.global_batch_size=128 \
+train.train_iters=100 \
+scheduler.lr_warmup_iters=10 \
+checkpoint.pretrained_checkpoint=/path/to/output/megatron/ckpt
+
+참고:
+
+기본 타겟 모듈은 모델 내 선형 레이어 ["linear_qkv", "linear_proj", "linear_fc1", "linear_fc2", "in_proj", "out_proj"]입니다.
+나머지 설정은 위의 Full 파라미터 파인튜닝과 동일합니다.
+LoRA 체크포인트에는 학습 가능한 어댑터 가중치만 포함됩니다. 평가를 위해 HuggingFace 포맷으로 변환하려면 아래와 같이 어댑터를 베이스 모델에 병합해야 합니다.
+bash
+Copy
+python examples/peft/merge_lora.py \
+--hf-model-path $HF_MODEL_ID \
+--lora-checkpoint /path/to/lora/ckpt/iter_xxxxxxx \
+--output /path/to/merged/ckpt
+5. 학습된 모델 HuggingFace로 내보내기
+python
+Copy
+bridge.export_ckpt(
+    megatron_path="./checkpoints/nemotron_nano_sft/iter_0001000",
+    hf_path="./exports/nemotron_nano_sft_hf",
+    show_progress=True
+)
+
+from transformers import AutoModelForCausalLM, AutoTokenizer
+model     = AutoModelForCausalLM.from_pretrained("./exports/nemotron_nano_sft_hf")
+tokenizer = AutoTokenizer.from_pretrained("./exports/nemotron_nano_sft_hf")
+print(f"모델 파라미터 수: {sum(p.numel() for p in model.parameters()):,}")
+print("내보내기 완료 → NeMo RL GRPO 탭으로 이동")
+bash
+Copy
+python examples/conversion/convert_checkpoints.py export \
+--hf-model $HF_MODEL_ID \
+--megatron-path ./checkpoints/nemotron_nano_sft/iter_0001000 \
+--hf-path ./exports/nemotron_nano_sft_hf
+6. 참고 자료
+리소스	URL
+Megatron-Bridge 공식 문서	docs.nvidia.com/nemo/megatron-bridge/latest/
+Megatron-Bridge 변환 가이드	bridge-guide.html
+Nemotron 3 Nano Checkpoint (BF16)	HuggingFace
+Nemotron 3 Nano Guide	docs.nvidia.com/.../nemotron3.html
+Nemotron 3 Nano Training Recipe	docs.nvidia.com/.../nano3/README.html
+Nemotron 3 Nano SFT Recipe	docs.nvidia.com/.../nano3/README.html

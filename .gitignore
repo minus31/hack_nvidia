@@ -1,0 +1,22 @@
+# Environment
+.env
+.env.*
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+*.egg-info/
+
+# Node.js
+node_modules/
+
+# Generated data & outputs
+data/
+output/
+outputs/
+*.parquet
+
+# macOS
+.DS_Store

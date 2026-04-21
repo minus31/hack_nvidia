@@ -1,0 +1,544 @@
+NeMo RL — Nemotron 3 Nano RL 학습 가이드
+SFT로 instruction-tuned된 Nemotron 3 Nano를 GRPO 기반 강화학습으로 추가 정렬하는 Stage 2 가이드입니다.
+Docs: docs.nvidia.com/nemo/rl/latest/  |  NeMo RL GitHub: github.com/NVIDIA-NeMo/RL
+1. 설치 & 환경 설정
+
+Nemotron 3 Nano 전용 NeMo RL 컨테이너를 사용하는 것을 권장합니다.
+
+bash
+Copy
+# Nemotron 3 Nano 전용 NeMo RL 컨테이너
+docker pull nvcr.io/nvidia/nemo-rl:v0.4.0.nemotron_3_nano
+docker run --gpus all -it --rm \
+  -v /path/to/workspace:/workspace \
+  nvcr.io/nvidia/nemo-rl:v0.4.0.nemotron_3_nano
+
+또는 소스에서 직접 설치도 가능합니다:
+
+bash
+Copy
+# 저장소 클론 (서브모듈 포함 필수)
+git clone git@github.com:NVIDIA-NeMo/RL.git nemo-rl --recursive
+cd nemo-rl
+git config submodule.recurse true
+
+# uv 패키지 매니저 설치 및 가상환경 생성
+curl -LsSf https://astral.sh/uv/install.sh | sh
+uv venv && source .venv/bin/activate
+
+# 환경 변수
+export HF_HOME=/path/to/hf/cache
+export HF_TOKEN=<your_hf_token>
+export WANDB_API_KEY=<your_wandb_key>
+2. Training Backends
+
+NeMo RL은 두 가지 분산 학습 백엔드를 지원합니다. 두 백엔드 모두 HuggingFace 체크포인트를 입력으로 받습니다.
+
+백엔드	설명	적합한 경우
+DTensor (FSDP2)	PyTorch 차세대 분산 학습. 설정 간단, 메모리 효율적	소·중형 모델, 빠른 실험
+Megatron	NVIDIA 고성능 학습 프레임워크. TP/PP/EP 지원	100B+ 대형 모델, 프로덕션
+2.1 DTensor 설정
+yaml
+전체 설정 보기
+Copy
+policy:
+  dtensor_config:
+    enabled: true
+2.2 Megatron 설정
+
+Megatron 백엔드는 HF 체크포인트를 Megatron 포맷으로 변환 후 사용합니다. DTensor와 동시에 활성화 시 Megatron이 우선합니다.
+
+NeMo 및 Megatron 서브모듈을 초기화합니다. git submodule update --init --recursive
+policy configs에 megatron_cfg 키를 추가합니다.
+yaml
+전체 설정 보기
+Copy
+policy:
+  megatron_cfg:
+    enabled: true
+    # force_reconvert_from_hf: true  # 재변환 강제 시
+3. 데이터 준비
+
+GRPO는 프롬프트와 정답 쌍을 JSONL 형식으로 입력받으며, 모델이 생성한 응답을 reward function이 정답과 비교해 보상을 계산합니다. 커스텀 데이터셋을 사용할 경우 input_key / output_key로 필드명을 지정하면 됩니다 (기본값: "input", "output").
+
+3.1 DatumSpec — 학습 샘플 구조
+
+모든 데이터 프로세서는 DatumSpec 형식을 반환해야 합니다. (소스 코드)
+
+python
+Copy
+# nemo_rl/data/interfaces.py
+from typing import Any, Union
+from typing_extensions import NotRequired, TypedDict
+import torch
+
+LLMMessageLogType = list[dict[str, Union[str, torch.Tensor]]]
+
+class DatumSpec(TypedDict):
+    message_log: LLMMessageLogType       # 대화 히스토리 (role, content, token_ids)
+    length: int                          # 전체 토큰 시퀀스 길이
+    extra_env_info: dict[str, Any]       # reward function에 전달될 정답 등 추가 정보
+    loss_multiplier: float               # 손실 가중치 (시퀀스가 너무 길면 0.0으로 마스킹)
+    idx: int                             # 샘플 인덱스
+    task_name: NotRequired[str]          # 태스크 식별자 (기본값: "default")
+    stop_strings: NotRequired[list[str]] # 생성 중단 문자열 (선택)
+    __extra__: NotRequired[Any]          # 추가 필드 허용
+3.2 커스텀 데이터 프로세서 작성
+
+NeMo RL에서 제공하는 math_data_processor를 참고해 자체 프로세서를 작성합니다. (소스 코드)
+
+python
+Copy
+# nemo_rl/data/processors.py — math_data_processor
+from typing import Any, cast
+import torch
+from nemo_rl.data.interfaces import DatumSpec, LLMMessageLogType, TaskDataSpec
+
+def math_data_processor(
+    datum_dict: dict[str, Any],
+    task_data_spec: TaskDataSpec,
+    tokenizer,
+    max_seq_length: int,
+    idx: int,
+) -> DatumSpec:
+    problem  = datum_dict["problem"]
+    solution = str(datum_dict["expected_answer"])
+    extra_env_info = {"ground_truth": solution}
+
+    message_log: LLMMessageLogType = []
+
+    # 시스템 프롬프트 처리
+    if task_data_spec.system_prompt:
+        sys_prompt: dict[str, str | torch.Tensor] = {
+            "role": "system",
+            "content": task_data_spec.system_prompt,
+        }
+        sys = tokenizer.apply_chat_template(
+            [cast(dict[str, str], sys_prompt)],
+            tokenize=False,
+            add_generation_prompt=False,
+            add_special_tokens=False,
+        )
+        sys_prompt["token_ids"] = tokenizer(
+            sys, return_tensors="pt", add_special_tokens=False
+        )["input_ids"][0]
+        message_log.append(sys_prompt)
+
+    # 유저 메시지 처리
+    if task_data_spec.prompt:
+        problem = task_data_spec.prompt.format(problem)
+    user_message = {"role": "user", "content": problem}
+    message = tokenizer.apply_chat_template(
+        [user_message],
+        tokenize=False,
+        add_generation_prompt=True,
+        add_special_tokens=False,
+    )
+    user_message["token_ids"] = tokenizer(
+        message, return_tensors="pt", add_special_tokens=False
+    )["input_ids"][0]
+    user_message["content"] = message
+    message_log.append(user_message)
+
+    length = sum(len(m["token_ids"]) for m in message_log)
+
+    # max_seq_length 초과 시 마스킹
+    loss_multiplier = 1.0
+    if length > max_seq_length:
+        for indiv_message in message_log:
+            indiv_message["token_ids"] = indiv_message["token_ids"][
+                : min(4, max_seq_length // len(message_log))
+            ]
+        loss_multiplier = 0.0
+
+    output: DatumSpec = {
+        "message_log": message_log,
+        "length": length,
+        "extra_env_info": extra_env_info,
+        "loss_multiplier": loss_multiplier,
+        "idx": idx,
+    }
+    if "task_name" in datum_dict:
+        output["task_name"] = datum_dict["task_name"]
+    return output
+3.3 프로세서 등록 및 학습 연결
+
+프로세서를 작성한 뒤 PROCESSOR_REGISTRY에 등록하거나 AllTaskProcessedDataset에 직접 전달합니다.
+
+python
+Copy
+from nemo_rl.data.processors import register_processor
+from nemo_rl.data.hf_datasets import AllTaskProcessedDataset
+
+# 프로세서 등록 (선택)
+register_processor("my_processor", my_data_processor)
+
+# 데이터셋 조립
+dataset = AllTaskProcessedDataset(
+    data.formatted_ds["train"],
+    tokenizer,
+    default_task_spec,
+    task_data_processors={"default": my_data_processor},
+    max_seq_length=data_config["max_input_seq_length"],
+)
+
+YAML의 data 섹션에서 데이터 경로와 프로세서 이름을 지정해 학습에 연결합니다.
+
+yaml
+data:
+  train:
+    data_path: "./data/train.jsonl"
+  validation:
+    data_path: "./data/val.jsonl"
+  default:
+    processor: "my_processor"   # register_processor()에서 등록한 이름
+    input_key: "input"          # JSONL의 프롬프트 필드명
+    output_key: "output"        # JSONL의 정답 필드명
+
+이후 섹션 5의 학습 실행 커맨드에 이 YAML을 --config로 전달하면 됩니다.
+
+4. Configuration 파일 (YAML)
+
+grpo_nanov3.yaml 기반의 전체 설정 파일입니다. 실제 사용 전 수정해야 할 필드는 아래를 참고하세요.
+
+text
+grpo_nanov3.yaml
+├── grpo          → GRPO 알고리즘 하이퍼파라미터 (배치 크기, 스텝 수, 검증 주기)
+├── loss_fn       → KL penalty, clipping 범위 등 손실 함수 설정
+├── checkpointing → 체크포인트 저장 경로·주기·조건
+├── policy        → 모델 경로, 배치 설정, 분산 학습 백엔드, generation 설정
+│   ├── dtensor_cfg   → PyTorch FSDP2 기반 백엔드 (소·중형 모델 권장)
+│   ├── megatron_cfg  → Megatron 백엔드 (대형 모델, enabled: true 시 dtensor 무시)
+│   └── generation    → vllm 추론 설정 (colocated 모드에서 학습과 GPU 공유)
+├── data          → 학습/검증 데이터 경로 및 데이터셋 타입
+├── env           → NeMo Gym 환경 설정 (reward server 목록)
+├── logger        → W&B / TensorBoard / MLflow 연동
+└── cluster       → GPU 수, 노드 수 (실제 인프라에 맞게 반드시 수정)
+
+자주 수정하는 필드
+
+policy.model_name — HF 체크포인트 경로로 교체 (기본값 /path/to/hf_checkpoint는 플레이스홀더)
+data.train.data_path / data.validation.data_path — 실제 학습 데이터 경로
+cluster.gpus_per_node / num_nodes — 실제 인프라 GPU 수에 맞게 수정
+grpo.num_prompts_per_step — GPU 수와 메모리에 맞게 조정 (기본값 128은 32노드 기준)
+policy.megatron_cfg.tensor/pipeline_model_parallel_size — 전체 GPU 수 = TP × PP × CP 가 되도록 설정
+
+유의사항
+
+DTensor vs Megatron: megatron_cfg.enabled: true이면 dtensor_cfg는 무시됩니다. 두 백엔드를 동시에 활성화하지 마세요.
+vllm colocated 메모리: generation.vllm_cfg.gpu_memory_utilization은 0.5 이하로 유지. colocated 모드에서 학습과 vllm이 같은 GPU를 공유하므로 너무 높이면 학습 단계에서 OOM이 발생합니다.
+yaml
+전체 설정 보기
+Copy
+# GRPO Algorithm Configuration for training Nano v3
+grpo:
+  num_prompts_per_step: 128
+  num_generations_per_prompt: 16
+  max_rollout_turns: 1
+  max_num_epochs: 1
+  max_num_steps: 1000000
+  normalize_rewards: true
+  use_leave_one_out_baseline: true
+  val_period: 5
+  seed: 42
+  async_grpo:
+    enabled: false
+  # ...
+
+loss_fn:
+  reference_policy_kl_penalty: 0
+  reference_policy_kl_type: k3
+  ratio_clip_min: 0.2
+  ratio_clip_max: 0.28
+  token_level_loss: True
+  # ...
+
+checkpointing:
+  enabled: true
+  checkpoint_dir: "results/grpo"
+  metric_name: "val:total_reward/mean"
+  save_period: 10
+  save_optimizer: true
+  # ...
+
+policy:
+  model_name: "/path/to/hf_checkpoint"
+  train_global_batch_size: 2048
+  train_micro_batch_size: 1
+  generation_batch_size: 64
+  max_total_sequence_length: 49152
+  precision: "bfloat16"
+
+  dtensor_cfg:
+    enabled: false
+    tensor_parallel_size: 1
+    # ...
+
+  megatron_cfg:
+    enabled: true
+    tensor_model_parallel_size: 2
+    pipeline_model_parallel_size: 2
+    context_parallel_size: 4
+    sequence_parallel: true
+    # ...
+    optimizer:
+      optimizer: "adam"
+      lr: 3e-6
+      weight_decay: 0.0
+      use_distributed_optimizer: true
+      # ...
+    scheduler:
+      lr_decay_style: "constant"
+      lr_warmup_iters: 10
+      # ...
+    # ...
+
+  generation:
+    backend: "vllm"
+    max_new_tokens: ${policy.max_total_sequence_length}
+    temperature: 1.0
+    vllm_cfg:
+      tensor_parallel_size: 4
+      gpu_memory_utilization: 0.5
+      max_model_len: ${policy.max_total_sequence_length}
+      # ...
+    colocated:
+      enabled: true
+  # ...
+
+data:
+  train:
+    data_path: "/path/to/train.jsonl"
+  validation:
+    data_path: "/path/to/validation.jsonl"
+  default:
+    dataset_name: NemoGymDataset
+    env_name: "nemo_gym"
+  # ...
+
+env:
+  should_use_nemo_gym: true
+  nemo_gym:
+    config_paths:
+    - responses_api_models/vllm_model/configs/vllm_model_for_training.yaml
+    - resources_servers/math_with_judge/configs/math_with_judge.yaml
+    # ...
+
+logger:
+  log_dir: "logs"
+  wandb_enabled: false
+  tensorboard_enabled: false
+  # ...
+
+cluster:
+  gpus_per_node: 8
+  num_nodes: 32
+5. GRPO 학습 실행
+
+학습은 run_grpo.py(또는 NeMo Gym 기반의 run_grpo_nemo_gym.py)로 실행합니다. --config에 YAML 파일을 지정하고, Hydra 오버라이드로 파라미터를 덮어쓸 수 있습니다.
+
+bash
+Copy
+# 기본 실행 (DTensor 백엔드)
+uv run python examples/run_grpo.py \
+  --config my_grpo.yaml
+
+# CLI 파라미터 오버라이드 (Hydra key=value 형식)
+uv run python examples/run_grpo.py \
+  --config my_grpo.yaml \
+  policy.model_name=/path/to/hf_checkpoint \
+  grpo.max_num_steps=1000 \
+  grpo.num_prompts_per_step=64 \
+  grpo.num_generations_per_prompt=8 \
+  loss_fn.reference_policy_kl_penalty=0.01 \
+  logger.wandb_enabled=true
+6. 학습 커스터마이징
+6.1 Async GRPO
+
+기본 GRPO는 생성(rollout)과 학습(update)이 동기적으로 교대합니다. Async GRPO를 활성화하면 이전 스텝의 trajectory를 재사용하며 GPU 유휴 시간을 줄여 처리량을 높입니다.
+
+yaml
+Copy
+grpo:
+  async_grpo:
+    enabled: true
+    max_trajectory_age_steps: 1  # trajectory를 최대 몇 스텝 전까지 재사용할지
+bash
+Copy
+# CLI로 즉시 활성화
+uv run python examples/run_grpo.py \
+  --config my_grpo.yaml \
+  grpo.async_grpo.enabled=true \
+  grpo.async_grpo.max_trajectory_age_steps=1
+6.2 KL Penalty 및 Reward 조정
+
+KL penalty는 정책이 참조 모델에서 너무 벗어나지 않도록 제약합니다. 값이 너무 크면 학습이 느려지고, 0이면 순수 GRPO입니다.
+
+bash
+Copy
+# 순수 GRPO (KL penalty 없음)
+uv run python examples/run_grpo.py --config my_grpo.yaml \
+  loss_fn.reference_policy_kl_penalty=0
+
+# KL 적용 (정책 안정화)
+uv run python examples/run_grpo.py --config my_grpo.yaml \
+  loss_fn.reference_policy_kl_penalty=0.05 \
+  loss_fn.reference_policy_kl_type=k3    # k1, k2, k3 중 선택
+
+# ratio clipping 범위 조정 (기본 0.2 ~ 0.28)
+uv run python examples/run_grpo.py --config my_grpo.yaml \
+  loss_fn.ratio_clip_min=0.1 \
+  loss_fn.ratio_clip_max=0.2
+파라미터	기본값	설명
+reference_policy_kl_penalty	0	KL penalty 계수. 0이면 KL 미적용
+reference_policy_kl_type	k3	KL 근사 방식. k1(단순)·k2·k3(정밀) 중 선택
+ratio_clip_min	0.2	importance ratio clipping 하한
+ratio_clip_max	0.28	importance ratio clipping 상한
+token_level_loss	true	토큰 단위 loss 계산 여부
+6.3 커스텀 보상 함수
+
+NeMo RL의 보상 함수는 EnvironmentInterface를 상속하는 Ray remote 클래스로 구현합니다. step()이 핵심 메서드로, message_log_batch(대화 히스토리)와 metadata(DatumSpec의 extra_env_info)를 받아 EnvironmentReturn을 반환합니다.
+
+Nemotron 3 학습에 실제 사용된 MathMultiRewardEnvironment는 세 가지 보상을 동시에 계산합니다 — 정답 일치, 정수 포맷, XML 구조 준수. 이를 참고한 커스텀 환경 예시입니다.
+
+python
+Copy
+# my_env/format_reward_env.py
+import re
+import torch
+import ray
+from nemo_rl.environments.interfaces import EnvironmentInterface, EnvironmentReturn
+from nemo_rl.data.interfaces import LLMMessageLogType
+
+# ① 보상 계산 Worker — Ray remote가 아닌 일반 클래스
+class FormatRewardWorker:
+    """
+    Nemotron 3의 HFMultiRewardVerifyWorker 패턴 참고.
+    <think>...</think>\n<answer>...</answer> 포맷 준수 여부를 검사.
+    """
+    FORMAT_PATTERN = re.compile(
+        r"^<think>.*?</think>\n<answer>(.*?)</answer>$",
+        re.DOTALL,
+    )
+
+    def verify(
+        self,
+        pred_responses: list[str],
+        ground_truths: list[str],
+    ) -> tuple[list[float], list[float]]:
+        correctness, format_scores = [], []
+        for response, gt in zip(pred_responses, ground_truths):
+            m = self.FORMAT_PATTERN.match(response.strip())
+            fmt = 1.0 if m else 0.0
+            answer = m.group(1).strip() if m else ""
+            correct = 1.0 if answer == gt.strip() else 0.0
+            format_scores.append(fmt)
+            correctness.append(correct)
+        return correctness, format_scores
+
+
+# ② 환경 클래스 — @ray.remote 필수
+@ray.remote(max_restarts=-1, max_task_retries=-1)
+class FormatRewardEnvironment(EnvironmentInterface):
+
+    def __init__(self, cfg: dict):
+        self.worker = FormatRewardWorker()
+
+    def step(
+        self,
+        message_log_batch: list[LLMMessageLogType],
+        metadata: list[dict],
+    ) -> EnvironmentReturn:
+        # 마지막 assistant 응답 추출 (MathEnvironment와 동일한 패턴)
+        responses = [
+            "".join(
+                str(m["content"])
+                for m in conv
+                if m["role"] == "assistant"
+            )
+            for conv in message_log_batch
+        ]
+        ground_truths = [meta["ground_truth"] for meta in metadata]
+
+        correctness, fmt_scores = self.worker.verify(responses, ground_truths)
+
+        # 다중 보상: shape [B, 2]  (correctness, format)
+        rewards = torch.tensor(
+            list(zip(correctness, fmt_scores)), dtype=torch.float32
+        )
+        done = torch.ones(len(responses))
+
+        return EnvironmentReturn(
+            observations=[{"role": "environment", "content": ""} for _ in responses],
+            metadata=metadata,
+            next_stop_strings=[None] * len(responses),
+            rewards=rewards,
+            terminateds=done,
+            answers=None,
+        )
+
+    def global_post_process_and_metrics(self, batch):
+        return batch, {}
+
+다중 보상 (Multi-Reward): rewards를 shape [B, N]으로 반환하면 N개의 보상 컴포넌트를 독립적으로 추적할 수 있습니다. Nemotron 3는 이 방식으로 정답·포맷·정수 여부를 분리해 학습했습니다.
+단일 보상이면 torch.tensor(correctness)로 shape [B]를 반환하면 됩니다.
+
+구현한 환경을 학습 스크립트에서 직접 전달하거나 YAML env 섹션에 연결합니다. 자세한 등록 방법은 공식 GRPO 가이드 및 math_environment.py 소스를 참고하세요.
+
+7. 학습 모니터링
+7.1 TensorBoard 설정 및 실행
+
+YAML 설정에서 logger.tensorboard_enabled: true로 활성화하면 log_dir에 TensorBoard 로그가 저장됩니다.
+
+yaml
+Copy
+logger:
+  log_dir: "logs"           # TensorBoard 로그 저장 경로
+  tensorboard_enabled: true
+  wandb_enabled: false
+  monitor_gpus: true
+  num_val_samples_to_print: 0
+
+학습 실행 후 별도 터미널에서 TensorBoard를 실행합니다.
+
+bash
+Copy
+tensorboard --logdir=./logs --port=6006
+
+Brev 인스턴스를 사용하는 경우, 로컬 터미널에서 Brev 포트 포워딩으로 접근합니다.
+
+bash
+Copy
+brev port-forward <instance-name> --port 6006:6006
+
+브라우저에서 http://localhost:6006으로 접속합니다.
+
+7.2 주요 모니터링 메트릭
+
+아래 메트릭들은 GRPO 학습 안정성과 수렴 여부를 진단하는 데 사용됩니다.
+
+메트릭	설명	권장 범위
+token_mult_prob_error	곱셈 토큰 확률 오차 (Multiplicative Token Probability Error)
+생성(generation) 시점의 토큰 확률과 학습(policy) 시점의 토큰 확률 간의 곱셈적 상대 오차를 측정합니다. 두 확률이 일치할수록 학습이 안정적으로 진행됩니다.	< 1–2%
+gen_kl_error
+policy_kl_error
+js_divergence_error	KL 발산 오차 (KL Divergence Error)
+gen_kl_error: 생성 분포 P_gen과 정책 분포 P_policy 사이의 KL 발산
+policy_kl_error: 정책 분포 P_policy와 참조 분포 P_ref 사이의 KL 발산
+js_divergence_error: 두 분포 간 대칭적 유사도를 나타내는 Jensen-Shannon 발산
+값이 작을수록 생성·학습·참조 분포가 일치하며 학습이 안정적입니다.	< 1e-3
+sampling_importance_ratio	샘플링 중요도 비율 (Sampling Importance Ratio)
+정책 확률과 생성 확률의 비율로, 생성 시점과 학습 시점 사이의 분포 이동을 보정하는 데 사용됩니다. 비율이 1에 가까울수록 두 시점의 분포가 일치합니다.	≈ 1.0
+approx_entropy	엔트로피 (Entropy)
+정책 분포의 근사 엔트로피로, 정책 붕괴(policy collapse) 여부를 감지합니다. 엔트로피가 급격히 낮아지면 모델이 특정 출력으로 수렴하며 다양성을 잃는 신호입니다.	안정적으로 유지
+8. 참고 자료
+리소스	URL
+NeMo RL 공식 문서	docs.nvidia.com/nemo/rl/latest/
+GRPO 학습 예제	docs.nvidia.com/nemo/rl/latest/about/algorithms/grpo.html
+GRPO In-depth Walkthrough	docs.nvidia.com/nemo/rl/nightly/guides/grpo.html
+Nemotron 3 Nano RL 파이프라인	docs.nvidia.com/nemotron/nightly/nemotron/nano3/rl.html
+Feature Roadmap	docs.nvidia.com/nemo/rl/latest/about/features.html
+Algorithm Support Matrix	docs.nvidia.com/nemo/rl/nightly/guides/grpo.html
+Reward Model Training	docs.nvidia.com/nemo/rl/nightly/guides/rm.html
+GRPO Related Environments	docs.nvidia.com/nemo/rl/nightly/guides/environments.html
+Async GRPO Training	docs.nvidia.com/nemo/rl/nightly/guides/async-grpo.html

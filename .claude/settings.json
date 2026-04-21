@@ -1,0 +1,16 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npx playwright --version)",
+      "Bash(python3 -c \"import playwright; print\\(''playwright installed''\\)\")",
+      "WebFetch(domain:nemotron-dev-materials-q9notf2ox.brevlab.com)",
+      "WebFetch(domain:nvidia-nemo.github.io)",
+      "Bash(node scrape_tabs.js)",
+      "Bash(npm install playwright --prefix /Users/hyunkim/Desktop/dev/2026/hack_nvidia)",
+      "Bash(npx playwright install chromium)"
+    ],
+    "additionalDirectories": [
+      "/Users/hyunkim/Desktop/dev/2026/hack_nvidia/docs/track_c"
+    ]
+  }
+}
