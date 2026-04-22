@@ -1,0 +1,1194 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Datasets That Don't Go Stale · Track C · Nemotron Hackathon</title>
+<style>
+  :root {
+    --bg:            #0a0d10;
+    --bg-soft:       #11161b;
+    --bg-card:       #161c22;
+    --bg-elev:       #1f272e;
+    --fg:            #e9eef3;
+    --fg-dim:        #b5c0cb;
+    --fg-muted:      #7b8794;
+    --border:        #252d35;
+    --border-soft:   #1a2026;
+    --accent:        #76b900;
+    --accent-soft:   #a1de3a;
+    --accent-dim:    #4d7a00;
+    --accent-glow:   rgba(118, 185, 0, 0.18);
+    --ok:            #76b900;
+    --fail:          #e5484d;
+    --warn:          #ffb547;
+    --mono: "SF Mono", ui-monospace, "JetBrains Mono", Menlo, Consolas, monospace;
+    --sans: -apple-system, BlinkMacSystemFont, "Inter", "Segoe UI", sans-serif;
+  }
+  * { box-sizing: border-box; }
+  html, body {
+    margin: 0; padding: 0;
+    background: var(--bg); color: var(--fg);
+    font-family: var(--sans);
+    font-size: 16px; line-height: 1.55;
+    -webkit-font-smoothing: antialiased;
+  }
+  ::selection { background: var(--accent); color: #000; }
+
+  .container { max-width: 1240px; margin: 0 auto; padding: 0 32px; }
+
+  /* ---------- Global nav / header ---------- */
+  .topbar {
+    position: sticky; top: 0; z-index: 50;
+    backdrop-filter: blur(12px);
+    background: rgba(10,13,16,0.75);
+    border-bottom: 1px solid var(--border-soft);
+  }
+  .topbar-inner {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 14px 32px;
+    max-width: 1240px; margin: 0 auto;
+  }
+  .brand { display: flex; align-items: center; gap: 10px; font-weight: 600; font-size: 14px; letter-spacing: 0.02em; }
+  .brand-dot { width: 10px; height: 10px; border-radius: 50%; background: var(--accent); box-shadow: 0 0 14px var(--accent); }
+  .topbar-meta { display: flex; align-items: center; gap: 20px; font-size: 12px; color: var(--fg-muted); font-family: var(--mono); }
+  .live-pill { display: inline-flex; align-items: center; gap: 6px; padding: 4px 10px; border-radius: 999px; background: var(--accent-glow); color: var(--accent-soft); font-weight: 600; }
+  .live-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--accent); animation: pulse 1.6s ease-in-out infinite; }
+  @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.35; } }
+
+  /* ---------- Hero ---------- */
+  .hero {
+    position: relative;
+    padding: 140px 0 90px;
+    overflow: hidden;
+  }
+  .hero::before {
+    content: ""; position: absolute; inset: 0;
+    background:
+      radial-gradient(ellipse 60% 50% at 15% 20%, rgba(118, 185, 0, 0.14), transparent 60%),
+      radial-gradient(ellipse 40% 40% at 85% 80%, rgba(118, 185, 0, 0.07), transparent 60%);
+    pointer-events: none;
+  }
+  .eyebrow {
+    font-family: var(--mono); font-size: 12px; letter-spacing: 0.14em; text-transform: uppercase;
+    color: var(--accent); margin: 0 0 18px;
+  }
+  .hero h1 {
+    font-size: clamp(44px, 6vw, 82px);
+    line-height: 1.04; font-weight: 800;
+    margin: 0 0 28px; letter-spacing: -0.02em;
+    max-width: 960px;
+  }
+  .hero h1 .accent { color: var(--accent); }
+  .hero .lede {
+    font-size: clamp(18px, 1.5vw, 22px);
+    color: var(--fg-dim);
+    max-width: 720px; margin: 0 0 36px;
+  }
+  .hero-chips {
+    display: flex; flex-wrap: wrap; gap: 10px; margin-top: 28px;
+  }
+  .chip {
+    display: inline-flex; align-items: center; gap: 8px;
+    padding: 8px 14px; border-radius: 999px;
+    border: 1px solid var(--border);
+    font-family: var(--mono); font-size: 12px; color: var(--fg-dim);
+  }
+  .chip strong { color: var(--accent); font-weight: 600; }
+
+  /* ---------- Section ---------- */
+  section.block { padding: 90px 0; border-top: 1px solid var(--border-soft); }
+  section.block h2 {
+    font-size: clamp(28px, 3vw, 42px);
+    font-weight: 700; letter-spacing: -0.01em;
+    margin: 0 0 14px;
+  }
+  section.block .subtitle {
+    color: var(--fg-muted); font-size: 15px; margin: 0 0 40px; max-width: 720px;
+  }
+
+  /* ---------- Why / split ---------- */
+  .why-grid {
+    display: grid; grid-template-columns: 1.1fr 0.9fr;
+    gap: 56px; align-items: start;
+  }
+  .why-grid p { font-size: 17px; color: var(--fg-dim); margin: 0 0 18px; }
+  .punchline {
+    font-size: 26px !important; line-height: 1.3; color: var(--fg) !important;
+    font-weight: 600; border-left: 3px solid var(--accent); padding-left: 22px;
+  }
+  @media (max-width: 840px) { .why-grid { grid-template-columns: 1fr; gap: 24px; } }
+
+  /* ---------- Pipeline diagram ---------- */
+  .pipe-wrap { background: var(--bg-soft); border: 1px solid var(--border); border-radius: 16px; padding: 40px 32px; margin-top: 16px; }
+  .pipe-row { display: flex; align-items: center; gap: 16px; flex-wrap: wrap; justify-content: center; }
+  .pipe-node {
+    background: var(--bg-card); border: 1px solid var(--border);
+    padding: 20px 24px; border-radius: 12px; min-width: 160px;
+    text-align: center; font-weight: 600;
+  }
+  .pipe-node small { display: block; color: var(--fg-muted); font-size: 12px; font-weight: 400; font-family: var(--mono); margin-top: 6px; }
+  .pipe-node.accent { background: var(--accent-glow); border-color: var(--accent); color: var(--accent-soft); }
+  .pipe-arrow { color: var(--accent); font-size: 28px; font-family: var(--mono); }
+  .pipe-feedback { margin-top: 18px; text-align: center; color: var(--fg-muted); font-size: 13px; font-family: var(--mono); }
+
+  .tiers {
+    display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; margin-top: 36px;
+  }
+  .tier {
+    background: var(--bg-card); border: 1px solid var(--border); border-radius: 12px;
+    padding: 18px 18px 16px; position: relative;
+  }
+  .tier-label { font-family: var(--mono); font-size: 11px; color: var(--fg-muted); letter-spacing: 0.08em; text-transform: uppercase; }
+  .tier-title { font-weight: 700; font-size: 17px; margin: 6px 0 8px; }
+  .tier-desc { color: var(--fg-dim); font-size: 13px; }
+  .tier.feature { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent-glow); }
+  .tier.feature .tier-title::after {
+    content: "★"; color: var(--accent); margin-left: 6px;
+  }
+  @media (max-width: 840px) { .tiers { grid-template-columns: 1fr 1fr; } }
+
+  /* ---------- Explorer ---------- */
+  .explorer-head {
+    display: flex; align-items: flex-end; justify-content: space-between; gap: 24px;
+    margin-bottom: 28px; flex-wrap: wrap;
+  }
+  .explorer-head h2 { margin: 0; }
+  .demo-controls {
+    display: flex; align-items: center; gap: 14px;
+    background: var(--bg-card); border: 1px solid var(--border);
+    padding: 8px 14px; border-radius: 999px; font-size: 13px;
+  }
+  .demo-controls label { display: inline-flex; align-items: center; gap: 8px; cursor: pointer; user-select: none; }
+  .demo-controls input[type="checkbox"] { accent-color: var(--accent); width: 16px; height: 16px; }
+  .demo-status { color: var(--fg-muted); font-family: var(--mono); font-size: 11px; }
+
+  .selector { display: grid; gap: 14px; margin-bottom: 28px; }
+  .selector-row { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; }
+  .selector-label {
+    font-family: var(--mono); font-size: 11px; color: var(--fg-muted);
+    text-transform: uppercase; letter-spacing: 0.1em; min-width: 72px;
+  }
+  .selector-options { display: flex; gap: 8px; flex-wrap: wrap; }
+  .sel-btn {
+    background: var(--bg-card); border: 1px solid var(--border);
+    color: var(--fg-dim); font: inherit; font-size: 14px;
+    padding: 10px 18px; border-radius: 10px; cursor: pointer;
+    transition: all 0.15s ease;
+    position: relative;
+  }
+  .sel-btn:hover { color: var(--fg); border-color: #3a454e; }
+  .sel-btn.active {
+    background: var(--accent-glow); border-color: var(--accent);
+    color: var(--accent-soft); font-weight: 600;
+  }
+  .sel-btn.unavailable { opacity: 0.5; cursor: not-allowed; }
+  .sel-btn .dot {
+    display: inline-block; width: 6px; height: 6px; border-radius: 50%;
+    margin-right: 8px; vertical-align: middle;
+    background: var(--fg-muted);
+  }
+  .sel-btn .dot.available { background: var(--accent); }
+  .sel-btn .dot.partial { background: var(--warn); }
+
+  .panel {
+    display: grid;
+    grid-template-columns: 1fr 1.45fr;
+    gap: 24px;
+    background: var(--bg-soft);
+    border: 1px solid var(--border);
+    border-radius: 16px;
+    padding: 28px;
+    min-height: 420px;
+  }
+  @media (max-width: 960px) { .panel { grid-template-columns: 1fr; } }
+
+  .method-pane h3 { margin: 0 0 8px; font-size: 24px; font-weight: 700; }
+  .method-pane .method-short { font-family: var(--mono); color: var(--accent); font-size: 12px; text-transform: uppercase; letter-spacing: 0.08em; margin-bottom: 18px; }
+  .method-pane .method-desc { color: var(--fg-dim); font-size: 15px; margin-bottom: 22px; }
+  .how-list {
+    list-style: none; padding: 0; margin: 0;
+    counter-reset: step;
+  }
+  .how-list li {
+    counter-increment: step;
+    position: relative; padding-left: 36px; margin-bottom: 12px;
+    font-size: 14px; color: var(--fg-dim);
+  }
+  .how-list li::before {
+    content: counter(step);
+    position: absolute; left: 0; top: 0;
+    width: 24px; height: 24px; border-radius: 50%;
+    background: var(--bg-card); border: 1px solid var(--border);
+    color: var(--accent); font-family: var(--mono); font-size: 12px;
+    display: flex; align-items: center; justify-content: center; font-weight: 600;
+  }
+
+  .results-pane { display: flex; flex-direction: column; gap: 18px; }
+
+  .asr-board {
+    display: grid; gap: 12px;
+  }
+  .asr-row {
+    background: var(--bg-card); border: 1px solid var(--border);
+    padding: 14px 18px; border-radius: 10px;
+    display: grid; grid-template-columns: 1fr auto; align-items: center; gap: 14px;
+  }
+  .asr-model { font-family: var(--mono); font-size: 13px; color: var(--fg-dim); }
+  .asr-bar-wrap { position: relative; height: 8px; background: var(--bg-elev); border-radius: 999px; margin-top: 8px; overflow: hidden; }
+  .asr-bar { height: 100%; background: var(--accent); border-radius: 999px; transition: width 0.5s cubic-bezier(0.2, 0.8, 0.2, 1); }
+  .asr-bar.warn { background: var(--warn); }
+  .asr-bar.fail { background: var(--fg-muted); }
+  .asr-figure { font-family: var(--mono); font-size: 26px; font-weight: 700; color: var(--fg); }
+  .asr-figure .pct-sign { font-size: 14px; color: var(--fg-muted); margin-left: 2px; }
+  .asr-count { color: var(--fg-muted); font-family: var(--mono); font-size: 11px; margin-top: 4px; }
+  .asr-delta { font-family: var(--mono); font-size: 11px; margin-left: 10px; padding: 2px 8px; border-radius: 999px; font-weight: 600; }
+  .asr-delta.up { background: rgba(118, 185, 0, 0.18); color: var(--accent-soft); }
+  .asr-delta.flat { background: var(--bg-elev); color: var(--fg-muted); }
+  .asr-delta.down { background: rgba(229, 72, 77, 0.18); color: var(--fail); }
+
+  .samples-head {
+    display: flex; justify-content: space-between; align-items: baseline; margin-top: 4px;
+  }
+  .samples-head-title { font-size: 12px; font-family: var(--mono); color: var(--fg-muted); text-transform: uppercase; letter-spacing: 0.08em; }
+  .samples-count { font-family: var(--mono); font-size: 11px; color: var(--fg-muted); }
+
+  .samples-list { display: grid; gap: 10px; }
+  .sample-card {
+    background: var(--bg-card); border: 1px solid var(--border);
+    border-radius: 10px; padding: 14px 16px;
+    transition: all 0.15s;
+  }
+  .sample-card:hover { border-color: #3a454e; }
+  .sample-id { font-family: var(--mono); font-size: 11px; color: var(--accent); margin-bottom: 8px; display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+  .sample-tag { background: var(--bg-elev); color: var(--fg-muted); padding: 2px 8px; border-radius: 4px; font-size: 10px; }
+  .sample-split { display: grid; grid-template-columns: 1fr; gap: 10px; }
+  .sample-split.dual { grid-template-columns: 1fr 1fr; }
+  @media (max-width: 720px) { .sample-split.dual { grid-template-columns: 1fr; } }
+  .sample-col .col-label {
+    font-family: var(--mono); font-size: 10px; color: var(--fg-muted);
+    text-transform: uppercase; letter-spacing: 0.08em; margin-bottom: 6px;
+  }
+  .sample-col .col-text {
+    font-size: 13px; color: var(--fg-dim); line-height: 1.5;
+    white-space: pre-wrap; word-break: break-word;
+    max-height: 120px; overflow: hidden; position: relative;
+  }
+  .sample-card.expanded .col-text { max-height: none; }
+  .sample-card.expanded .expand-hint { display: none; }
+  .expand-hint {
+    display: block; margin-top: 8px;
+    font-size: 11px; color: var(--accent); font-family: var(--mono); cursor: pointer;
+  }
+
+  .empty-state {
+    text-align: center; padding: 40px 20px;
+    color: var(--fg-muted); font-size: 14px; font-family: var(--mono);
+    border: 1px dashed var(--border); border-radius: 10px;
+    background: var(--bg-card);
+  }
+  .empty-state strong { color: var(--fg-dim); display: block; margin-bottom: 6px; font-weight: 600; }
+
+  /* ---------- Self-Evolving deep dive ---------- */
+  .deep { background: linear-gradient(180deg, var(--bg) 0%, var(--bg-soft) 100%); }
+  .deep.active-hint { box-shadow: inset 0 0 0 1px var(--accent-glow); }
+  .deep .banner {
+    display: inline-flex; align-items: center; gap: 10px;
+    padding: 6px 14px; border-radius: 999px; background: var(--accent-glow);
+    color: var(--accent-soft); font-size: 12px; font-family: var(--mono);
+    text-transform: uppercase; letter-spacing: 0.08em;
+    margin-bottom: 18px;
+  }
+  .se-tabs {
+    display: inline-flex; gap: 4px; padding: 4px; margin-bottom: 18px;
+    background: var(--bg-elev); border: 1px solid var(--border); border-radius: 10px;
+  }
+  .se-tab {
+    padding: 6px 14px; border-radius: 6px; background: transparent; border: 0;
+    color: var(--fg-muted); font-family: var(--mono); font-size: 12px; cursor: pointer;
+    letter-spacing: 0.04em;
+  }
+  .se-tab:hover { color: var(--fg); }
+  .se-tab.active { background: var(--accent-glow); color: var(--accent-soft); }
+  .se-timeline {
+    display: flex; gap: 6px; margin-bottom: 28px; overflow-x: auto; padding: 12px 4px 16px;
+  }
+  .se-tick {
+    flex: 0 0 auto; min-width: 80px; padding: 10px 14px;
+    background: var(--bg-card); border: 1px solid var(--border); border-radius: 10px;
+    cursor: pointer; transition: all 0.15s;
+    text-align: center;
+  }
+  .se-tick:hover { border-color: #3a454e; }
+  .se-tick.active { background: var(--accent-glow); border-color: var(--accent); }
+  .se-tick .tick-iter { font-family: var(--mono); font-size: 13px; font-weight: 700; color: var(--fg); }
+  .se-tick .tick-asr { font-family: var(--mono); font-size: 10px; color: var(--fg-muted); margin-top: 4px; }
+  .se-tick.checkpoint { border-left-color: var(--accent); border-left-width: 3px; }
+
+  .se-grid {
+    display: grid; grid-template-columns: 1.3fr 0.7fr; gap: 24px;
+  }
+  @media (max-width: 960px) { .se-grid { grid-template-columns: 1fr; } }
+
+  .se-strategy-card {
+    background: var(--bg-card); border: 1px solid var(--border); border-radius: 12px;
+    padding: 22px 24px;
+  }
+  .se-strategy-head {
+    display: flex; justify-content: space-between; align-items: baseline;
+    margin-bottom: 14px;
+  }
+  .se-strategy-title { font-family: var(--mono); font-size: 12px; color: var(--fg-muted); text-transform: uppercase; letter-spacing: 0.1em; }
+  .se-strategy-iter { font-family: var(--mono); font-size: 12px; color: var(--accent); }
+  .se-strategy-text {
+    font-family: var(--mono); font-size: 13px; line-height: 1.6; color: var(--fg-dim);
+    white-space: pre-wrap;
+    background: var(--bg); border: 1px solid var(--border-soft); border-radius: 8px;
+    padding: 16px 18px;
+    max-height: 360px; overflow-y: auto;
+  }
+
+  .se-chart-card {
+    background: var(--bg-card); border: 1px solid var(--border); border-radius: 12px;
+    padding: 22px 24px; min-height: 320px;
+  }
+  .se-chart-card h4 { margin: 0 0 14px; font-size: 13px; font-family: var(--mono); color: var(--fg-muted); text-transform: uppercase; letter-spacing: 0.1em; }
+  .se-chart-legend { display: flex; gap: 14px; font-size: 11px; font-family: var(--mono); color: var(--fg-muted); margin-top: 10px; flex-wrap: wrap; }
+  .se-chart-legend .lg { display: inline-flex; align-items: center; gap: 6px; }
+  .se-chart-legend .sw { width: 10px; height: 3px; border-radius: 2px; display: inline-block; }
+
+  .se-feedback {
+    margin-top: 24px; padding: 22px 24px;
+    background: var(--bg-card); border: 1px solid var(--border); border-radius: 12px;
+  }
+  .se-feedback h4 { margin: 0 0 14px; font-size: 13px; font-family: var(--mono); color: var(--fg-muted); text-transform: uppercase; letter-spacing: 0.1em; }
+  .fb-notes { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+  @media (max-width: 840px) { .fb-notes { grid-template-columns: 1fr; } }
+  .fb-note {
+    background: var(--bg); border: 1px solid var(--border-soft);
+    padding: 14px 16px; border-radius: 8px;
+  }
+  .fb-note-header { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
+  .fb-tag {
+    font-family: var(--mono); font-size: 10px; padding: 2px 8px; border-radius: 4px;
+    text-transform: uppercase; letter-spacing: 0.06em;
+  }
+  .fb-tag.success { background: var(--accent-glow); color: var(--accent-soft); }
+  .fb-tag.failure { background: rgba(229, 72, 77, 0.15); color: var(--fail); }
+  .fb-behavior { font-family: var(--mono); font-size: 11px; color: var(--fg-muted); }
+  .fb-text { font-size: 12px; color: var(--fg-dim); line-height: 1.5; }
+
+  .footer {
+    padding: 40px 0 60px;
+    color: var(--fg-muted); font-size: 12px; font-family: var(--mono);
+    border-top: 1px solid var(--border-soft);
+    text-align: center;
+  }
+  .footer strong { color: var(--accent); }
+
+  /* ---------- Utility ---------- */
+  .mono { font-family: var(--mono); }
+  .hidden { display: none !important; }
+  .muted { color: var(--fg-muted); }
+
+</style>
+</head>
+<body>
+
+<!-- TOP BAR -->
+<div class="topbar">
+  <div class="topbar-inner">
+    <div class="brand">
+      <span class="brand-dot"></span>
+      <span>Track&nbsp;C&nbsp;·&nbsp;Self-Evolving&nbsp;SDG</span>
+    </div>
+    <div class="topbar-meta">
+      <span class="live-pill"><span class="live-dot"></span>LIVE</span>
+      <span id="last-updated">—</span>
+    </div>
+  </div>
+</div>
+
+<!-- HERO -->
+<section class="hero">
+  <div class="container">
+    <p class="eyebrow">NVIDIA Nemotron Hackathon · Seoul 2026 · Track C</p>
+    <h1>Datasets That<br><span class="accent">Don't Go Stale.</span></h1>
+    <p class="lede">
+      Every benchmark saturates. We built a pipeline that <strong>evolves existing datasets</strong>
+      to match the current capability of the model — automatically, verifiably, and on its own schedule.
+    </p>
+    <div class="hero-chips">
+      <span class="chip">Seed → <strong>Synthesizer</strong> → Evaluator → Feedback</span>
+      <span class="chip">Verifiable reward · <strong>no LLM judge</strong></span>
+      <span class="chip">Nemotron-3-Nano · GLM-5.1</span>
+      <span class="chip" id="hero-chip-best">Heuristic ASR <strong id="hero-asr">—</strong> on GLM-5.1</span>
+    </div>
+  </div>
+</section>
+
+<!-- WHY -->
+<section class="block">
+  <div class="container">
+    <h2>Why</h2>
+    <p class="subtitle">The effort that goes into a good benchmark is real. The half-life isn't.</p>
+    <div class="why-grid">
+      <div>
+        <p>Building a good dataset is hard. Difficulty, diversity, label accuracy — meeting all of these conditions takes researchers <strong>months, sometimes years</strong> of careful curation.</p>
+        <p>Then models catch up. Benchmarks saturate. Training sets start rehearsing what the model already knows. The standard response is to start from scratch — and throw the craft away.</p>
+      </div>
+      <div>
+        <p class="punchline">We don't throw it away.<br>We evolve it to match the current capability of the model.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- PIPELINE -->
+<section class="block">
+  <div class="container">
+    <h2>The Pipeline</h2>
+    <p class="subtitle">One loop. The seed never changes; the <em>strategy</em> learns.</p>
+
+    <div class="pipe-wrap">
+      <div class="pipe-row">
+        <div class="pipe-node">Seed<br><small>existing benchmark</small></div>
+        <div class="pipe-arrow">&rarr;</div>
+        <div class="pipe-node accent">Synthesizer<br><small>rewrites prompts</small></div>
+        <div class="pipe-arrow">&rarr;</div>
+        <div class="pipe-node">Evaluator<br><small>hash-check · ASR</small></div>
+        <div class="pipe-arrow">&rarr;</div>
+        <div class="pipe-node">Feedback<br><small>success &amp; failure notes</small></div>
+      </div>
+      <div class="pipe-feedback">↻ feedback re-optimizes the strategy, seed resets to original — no quality drift</div>
+    </div>
+
+    <div class="tiers">
+      <div class="tier">
+        <div class="tier-label">Tier 1</div>
+        <div class="tier-title">Heuristic</div>
+        <div class="tier-desc">Fixed rule-based templates. No LLM in the rewrite. Deterministic baseline.</div>
+      </div>
+      <div class="tier">
+        <div class="tier-label">Tier 2</div>
+        <div class="tier-title">Evol-Instruct</div>
+        <div class="tier-desc">LLM rewrites with a fixed strategy. One call per seed, no feedback.</div>
+      </div>
+      <div class="tier feature">
+        <div class="tier-label">Tier 3 · ours</div>
+        <div class="tier-title">Self-Evolving</div>
+        <div class="tier-desc">The strategy text itself is optimized from evaluation feedback.</div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- EXPLORER -->
+<section class="block" id="explorer">
+  <div class="container">
+    <div class="explorer-head">
+      <div>
+        <h2>Explorer</h2>
+        <p class="subtitle">Pick a dataset and a method. The panel rewires live from <span class="mono">results/</span> and <span class="mono">data/</span>.</p>
+      </div>
+      <div class="demo-controls">
+        <label><input type="checkbox" id="auto-demo-toggle" checked> Auto-demo</label>
+        <span class="demo-status" id="demo-status">cycling · 8s</span>
+      </div>
+    </div>
+
+    <div class="selector">
+      <div class="selector-row">
+        <span class="selector-label">Dataset</span>
+        <div class="selector-options" id="dataset-options"></div>
+      </div>
+      <div class="selector-row">
+        <span class="selector-label">Method</span>
+        <div class="selector-options" id="method-options"></div>
+      </div>
+    </div>
+
+    <div class="panel">
+      <div class="method-pane">
+        <h3 id="method-title">…</h3>
+        <div class="method-short" id="method-short">…</div>
+        <p class="method-desc" id="method-desc">…</p>
+        <ol class="how-list" id="method-how"></ol>
+      </div>
+      <div class="results-pane">
+        <div class="samples-head">
+          <span class="samples-head-title">Attack Success Rate</span>
+          <span class="samples-count" id="asr-subtext">—</span>
+        </div>
+        <div class="asr-board" id="asr-board"></div>
+
+        <div class="samples-head">
+          <span class="samples-head-title">Prompt samples</span>
+          <span class="samples-count" id="samples-count">—</span>
+        </div>
+        <div class="samples-list" id="samples-list"></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- SELF-EVOLVING DEEP DIVE -->
+<section class="block deep" id="deep-dive-section">
+  <div class="container">
+    <span class="banner">★ Self-Evolving · deep dive</span>
+    <h2>The strategy itself evolves.</h2>
+    <p class="subtitle">Each tick on the timeline is an iteration. Click to inspect the strategy text and ASR at that moment. New iterations appear automatically.</p>
+
+    <div class="se-tabs" id="se-tabs"></div>
+
+    <div class="se-timeline" id="se-timeline"></div>
+
+    <div class="se-grid">
+      <div class="se-strategy-card">
+        <div class="se-strategy-head">
+          <span class="se-strategy-title">Strategy at iteration</span>
+          <span class="se-strategy-iter" id="se-iter-label">—</span>
+        </div>
+        <div class="se-strategy-text" id="se-strategy-text">—</div>
+      </div>
+      <div class="se-chart-card">
+        <h4>ASR across iterations</h4>
+        <div id="se-chart"></div>
+        <div class="se-chart-legend" id="se-chart-legend"></div>
+      </div>
+    </div>
+
+    <div class="se-feedback" id="se-feedback-card">
+      <h4>Latest feedback notes</h4>
+      <div class="fb-notes" id="fb-notes"></div>
+    </div>
+  </div>
+</section>
+
+<div class="footer">
+  <div class="container">
+    Built with <strong>NeMo Data Designer</strong> · <strong>Nemotron-3-Nano (NIM)</strong> · <strong>pyarrow</strong> · <strong>pure HTML</strong> — offline demo<br>
+    <span style="opacity: 0.6;">Every number on this page is read live from <span class="mono">results/</span> and <span class="mono">data/</span>.</span>
+  </div>
+</div>
+
+<script>
+// =============================================================================
+// State & fetch
+// =============================================================================
+const State = {
+  data: null,
+  selectedDataset: null,
+  selectedMethod: null,
+  autoDemo: false,
+  autoDemoTimer: null,
+  pollTimer: null,
+  userInteractedAt: 0,
+  autoDemoIntervalMs: 8000,
+  autoDemoLongMs: 12000,       // on self_evolving, linger
+  pauseAfterInteractMs: 30000, // pause auto after user click
+  pollMs: 10000,
+  seSelectedIter: null,
+  seLastSig: null,             // signature of self-evolving state to detect updates
+  deepDiveDataset: null,       // independent dataset toggle for the deep-dive section
+};
+
+async function api(path) {
+  const r = await fetch(path, { cache: "no-store" });
+  if (!r.ok) throw new Error(`${path}: ${r.status}`);
+  return r.json();
+}
+
+async function fetchState()              { return api("/api/state"); }
+async function fetchSamples(d, m, n=5)   { return api(`/api/samples?dataset=${d}&method=${m}&limit=${n}`); }
+async function fetchDetails(d, m, mdl, n=3, succ=false) {
+  return api(`/api/details?dataset=${d}&method=${m}&model=${encodeURIComponent(mdl)}&limit=${n}&success_only=${succ}`);
+}
+async function fetchSelfEvolving(d)      { return api(`/api/self_evolving?dataset=${d}`); }
+
+// =============================================================================
+// Utilities
+// =============================================================================
+function clsx(...parts) { return parts.filter(Boolean).join(" "); }
+function esc(s) {
+  if (s == null) return "";
+  return String(s)
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;");
+}
+function pct(n) { return (n * 100).toFixed(1) + "%"; }
+
+function markUserInteract() {
+  State.userInteractedAt = Date.now();
+}
+
+function datasetById(id) {
+  return (State.data?.datasets || []).find(d => d.id === id);
+}
+function methodById(dataset, methodId) {
+  return dataset?.methods?.[methodId];
+}
+
+// =============================================================================
+// Render: Selectors
+// =============================================================================
+function renderDatasetOptions() {
+  const el = document.getElementById("dataset-options");
+  el.innerHTML = "";
+  for (const d of State.data.datasets) {
+    const btn = document.createElement("button");
+    btn.className = clsx("sel-btn", State.selectedDataset === d.id && "active");
+    const hasAny = Object.values(d.methods).some(m => m.available);
+    btn.innerHTML = `<span class="dot ${hasAny ? "available" : ""}"></span>${esc(d.label)}`;
+    btn.onclick = () => {
+      markUserInteract();
+      State.selectedDataset = d.id;
+      renderAll();
+    };
+    el.appendChild(btn);
+  }
+}
+
+function renderMethodOptions() {
+  const el = document.getElementById("method-options");
+  el.innerHTML = "";
+  const ds = datasetById(State.selectedDataset);
+  if (!ds) return;
+  for (const m of State.data.methods) {
+    const info = ds.methods[m.id] || {};
+    const btn = document.createElement("button");
+    btn.className = clsx("sel-btn",
+      State.selectedMethod === m.id && "active",
+      !info.available && "unavailable");
+    const dotCls = info.available ? "available" : "";
+    btn.innerHTML = `<span class="dot ${dotCls}"></span>${esc(m.label)}`;
+    btn.onclick = () => {
+      markUserInteract();
+      State.selectedMethod = m.id;
+      renderAll();
+    };
+    el.appendChild(btn);
+  }
+}
+
+// =============================================================================
+// Render: Method pane (left)
+// =============================================================================
+function renderMethodPane() {
+  const ds = datasetById(State.selectedDataset);
+  const m = methodById(ds, State.selectedMethod);
+  const meta = State.data.methods.find(x => x.id === State.selectedMethod) || m;
+  document.getElementById("method-title").textContent = meta.label;
+  document.getElementById("method-short").textContent = meta.short;
+  document.getElementById("method-desc").textContent = meta.description;
+  const how = document.getElementById("method-how");
+  how.innerHTML = "";
+  for (const step of (meta.how || [])) {
+    const li = document.createElement("li");
+    li.textContent = step;
+    how.appendChild(li);
+  }
+}
+
+// =============================================================================
+// Render: ASR board (right top)
+// =============================================================================
+function renderASRBoard() {
+  const ds = datasetById(State.selectedDataset);
+  const method = methodById(ds, State.selectedMethod);
+  const baseline = methodById(ds, "baseline");
+  const board = document.getElementById("asr-board");
+  const subtext = document.getElementById("asr-subtext");
+  board.innerHTML = "";
+
+  const models = method?.models || {};
+  const modelNames = Object.keys(models);
+
+  if (modelNames.length === 0) {
+    board.innerHTML = `<div class="empty-state">
+      <strong>No evaluation results yet</strong>
+      Run <span class="mono">src/run_experiment.py</span> for this (dataset, method) pair — the page will pick it up on next refresh.
+    </div>`;
+    subtext.textContent = "—";
+    return;
+  }
+
+  subtext.textContent = `evaluated on ${modelNames.length} model${modelNames.length>1?"s":""}`;
+
+  const isSE = State.selectedMethod === "self_evolving";
+  const peaks = method?.peak_by_model || {};
+  if (isSE) {
+    subtext.textContent = `latest iter ${method?.last_iter ?? "?"} · peak shown below`;
+  }
+
+  for (const name of modelNames) {
+    const s = models[name];
+    const asr = s.asr ?? 0;
+    const barCls = asr >= 0.1 ? "" : (asr > 0 ? "warn" : "fail");
+    const bw = Math.max(asr * 100, asr === 0 ? 0 : 2);
+
+    // baseline compare for delta
+    let deltaHTML = "";
+    if (State.selectedMethod !== "baseline" && baseline?.models?.[name]) {
+      const base = baseline.models[name].asr ?? 0;
+      const delta = asr - base;
+      const cls = delta > 0.0001 ? "up" : (delta < -0.0001 ? "down" : "flat");
+      const sign = delta > 0 ? "+" : "";
+      deltaHTML = `<span class="asr-delta ${cls}">${sign}${pct(delta)}</span>`;
+    }
+
+    // Self-evolving peak across iterations
+    let peakHTML = "";
+    if (isSE && peaks[name]) {
+      const p = peaks[name];
+      const peakPct = (p.asr * 100).toFixed(1);
+      peakHTML = `<div class="asr-count" style="color:var(--accent-soft);margin-top:6px;">
+        peak ${peakPct}% at iter ${p.iter}
+        <span class="muted">(${p.n_success}/${p.n_total})</span>
+      </div>`;
+    }
+
+    const row = document.createElement("div");
+    row.className = "asr-row";
+    row.innerHTML = `
+      <div>
+        <div class="asr-model">${esc(name)} ${deltaHTML}</div>
+        <div class="asr-bar-wrap"><div class="asr-bar ${barCls}" style="width:${bw}%"></div></div>
+        <div class="asr-count">${isSE ? "latest iter: " : ""}${s.n_success ?? 0} / ${s.n_total ?? 0} prompts succeeded</div>
+        ${peakHTML}
+      </div>
+      <div class="asr-figure">${(asr*100).toFixed(1)}<span class="pct-sign">%</span></div>
+    `;
+    board.appendChild(row);
+  }
+}
+
+// =============================================================================
+// Render: Samples (right bottom)
+// =============================================================================
+async function renderSamples() {
+  const list = document.getElementById("samples-list");
+  const count = document.getElementById("samples-count");
+  list.innerHTML = `<div class="empty-state" style="padding: 18px;"><span class="mono muted">loading…</span></div>`;
+  count.textContent = "";
+  const ds = State.selectedDataset;
+  const method = State.selectedMethod;
+
+  let samples = [];
+  try {
+    samples = await fetchSamples(ds, method, 4);
+  } catch (e) {
+    list.innerHTML = `<div class="empty-state"><strong>Load error</strong>${esc(e.message)}</div>`;
+    return;
+  }
+
+  // Invalidate if selection changed during await
+  if (ds !== State.selectedDataset || method !== State.selectedMethod) return;
+
+  if (samples.length === 0) {
+    list.innerHTML = `<div class="empty-state">
+      <strong>No samples available</strong>
+      <span>${esc(method)} has not produced output for <span class="mono">${esc(ds)}</span> yet.</span>
+    </div>`;
+    return;
+  }
+
+  count.textContent = `first ${samples.length}`;
+  list.innerHTML = "";
+  const dualView = method !== "baseline" && samples.some(s => s.evolved_prompt);
+
+  for (const s of samples) {
+    const card = document.createElement("div");
+    card.className = "sample-card";
+    const tagBits = [];
+    if (s.attack_type)   tagBits.push(`<span class="sample-tag">${esc(s.attack_type)}</span>`);
+    if (s.severity)      tagBits.push(`<span class="sample-tag">${esc(s.severity)}</span>`);
+    if (s.target_system) tagBits.push(`<span class="sample-tag">${esc(s.target_system)}</span>`);
+    const header = `
+      <div class="sample-id">
+        <span>${esc(s.behavior_id || "—")}</span>
+        ${tagBits.join("")}
+      </div>`;
+    if (dualView) {
+      card.innerHTML = header + `
+        <div class="sample-split dual">
+          <div class="sample-col">
+            <div class="col-label">Original</div>
+            <div class="col-text">${esc(s.original_prompt || "—")}</div>
+          </div>
+          <div class="sample-col">
+            <div class="col-label">Evolved · ${esc(method)}</div>
+            <div class="col-text">${esc(s.evolved_prompt || "—")}</div>
+          </div>
+        </div>
+        <div class="expand-hint">click to expand ↓</div>`;
+    } else {
+      card.innerHTML = header + `
+        <div class="sample-split">
+          <div class="sample-col">
+            <div class="col-label">Prompt</div>
+            <div class="col-text">${esc(s.original_prompt || "—")}</div>
+          </div>
+        </div>
+        <div class="expand-hint">click to expand ↓</div>`;
+    }
+    card.onclick = () => { markUserInteract(); card.classList.toggle("expanded"); };
+    list.appendChild(card);
+  }
+}
+
+// =============================================================================
+// Render: Self-Evolving deep dive
+// =============================================================================
+async function renderSelfEvolving() {
+  if (State.deepDiveDataset == null) State.deepDiveDataset = State.selectedDataset;
+  const ds = State.deepDiveDataset;
+  const section = document.getElementById("deep-dive-section");
+  section.classList.toggle("active-hint", State.selectedMethod === "self_evolving");
+
+  // Tabs — one per dataset, independent of the top-level selector.
+  const tabs = document.getElementById("se-tabs");
+  if (tabs) {
+    tabs.innerHTML = "";
+    for (const d of (State.data?.datasets || [])) {
+      const btn = document.createElement("button");
+      btn.className = clsx("se-tab", ds === d.id && "active");
+      btn.textContent = d.label || d.id;
+      btn.onclick = () => {
+        markUserInteract();
+        if (State.deepDiveDataset !== d.id) {
+          State.deepDiveDataset = d.id;
+          State.seSelectedIter = null;  // reset iter selection for the new dataset
+          renderSelfEvolving();
+        }
+      };
+      tabs.appendChild(btn);
+    }
+  }
+
+  let se;
+  try { se = await fetchSelfEvolving(ds); }
+  catch { se = { available: false }; }
+
+  const timeline = document.getElementById("se-timeline");
+  const strategyText = document.getElementById("se-strategy-text");
+  const iterLabel = document.getElementById("se-iter-label");
+  const fbCard = document.getElementById("se-feedback-card");
+  const fbNotes = document.getElementById("fb-notes");
+
+  if (!se || !se.available) {
+    timeline.innerHTML = `<div class="empty-state" style="flex:1">
+      <strong>Self-Evolving has not run on this dataset yet</strong>
+      <span class="mono">run src/synthesizers/self_evolving_synthesizer.py</span>
+    </div>`;
+    strategyText.textContent = "—";
+    iterLabel.textContent = "—";
+    fbCard.style.display = "none";
+    renderASRChart([], []);
+    return;
+  }
+
+  // Build ticks from strategy_history (strategy per iter) + progress.iterations (asr per iter)
+  const history = se.strategy_history || [];
+  const iters = se.progress?.iterations || [];
+  const byIter = {};
+  for (const h of history)  byIter[h.iter] = { ...(byIter[h.iter] || {}), ...h };
+  for (const it of iters)   byIter[it.iter] = { ...(byIter[it.iter] || {}), ...it };
+  const ordered = Object.values(byIter).sort((a, b) => a.iter - b.iter);
+
+  // signature to detect updates (log it but keep forced re-render for simplicity)
+  State.seLastSig = ordered.length + ":" + (ordered.at(-1)?.iter || 0);
+
+  // Pick active iter (latest by default)
+  if (State.seSelectedIter == null || !ordered.find(o => o.iter === State.seSelectedIter)) {
+    State.seSelectedIter = ordered.at(-1)?.iter ?? null;
+  }
+
+  // Timeline ticks
+  timeline.innerHTML = "";
+  const checkpointIters = new Set((se.checkpoints || []).map(c => c.iter));
+  for (const o of ordered) {
+    const tick = document.createElement("div");
+    tick.className = clsx("se-tick",
+      State.seSelectedIter === o.iter && "active",
+      checkpointIters.has(o.iter) && "checkpoint");
+    const asrs = o.asr || {};
+    const asrList = Object.entries(asrs).map(([k, v]) => `${shortModel(k)} ${(v*100).toFixed(0)}%`).join(" · ");
+    tick.innerHTML = `
+      <div class="tick-iter">iter ${o.iter}</div>
+      <div class="tick-asr">${asrList || "—"}</div>
+    `;
+    tick.onclick = () => {
+      markUserInteract();
+      State.seSelectedIter = o.iter;
+      renderSelfEvolving();
+    };
+    timeline.appendChild(tick);
+  }
+
+  // Active strategy
+  const active = ordered.find(o => o.iter === State.seSelectedIter) || ordered.at(-1);
+  if (active) {
+    iterLabel.textContent = `iter ${active.iter} / last ${se.progress?.last_iter ?? "?"}`;
+    strategyText.textContent = active.strategy || "(no strategy text recorded at this iteration)";
+  }
+
+  // ASR chart
+  renderASRChart(ordered, se);
+
+  // Feedback notes
+  const fb = se.latest_feedback;
+  if (fb && (fb.notes || []).length > 0) {
+    fbCard.style.display = "";
+    // Update title to note which iteration this feedback came from
+    const titleEl = fbCard.querySelector("h4");
+    if (titleEl) {
+      const isStale = fb.latest_available_iter && fb.iter !== fb.latest_available_iter;
+      titleEl.innerHTML = `Latest feedback notes ${isStale
+        ? `<span style="color:var(--fg-muted);font-weight:400;margin-left:8px;">from iter ${fb.iter} · latest iter ${fb.latest_available_iter} had no successful attacks</span>`
+        : `<span style="color:var(--fg-muted);font-weight:400;margin-left:8px;">iter ${fb.iter}</span>`}`;
+    }
+    fbNotes.innerHTML = "";
+    for (const n of fb.notes) {
+      const d = document.createElement("div");
+      d.className = "fb-note";
+      const tagCls = n.case_type === "success" ? "success" : "failure";
+      d.innerHTML = `
+        <div class="fb-note-header">
+          <span class="fb-tag ${tagCls}">${esc(n.case_type || "note")}</span>
+          <span class="fb-behavior">${esc(n.behavior_id || "—")}</span>
+        </div>
+        <div class="fb-text">${esc((n.note || "").slice(0, 360))}</div>
+      `;
+      fbNotes.appendChild(d);
+    }
+  } else {
+    fbCard.style.display = "none";
+  }
+}
+
+function shortModel(name) {
+  if (!name) return "—";
+  if (name.includes("nemotron")) return "Nemo";
+  if (name.includes("GLM"))      return "GLM";
+  return name.split("/").pop().slice(0, 6);
+}
+
+function renderASRChart(ordered, se) {
+  const host = document.getElementById("se-chart");
+  const legend = document.getElementById("se-chart-legend");
+  host.innerHTML = "";
+  legend.innerHTML = "";
+
+  if (ordered.length === 0) {
+    host.innerHTML = `<div class="empty-state" style="padding:20px;">no iterations yet</div>`;
+    return;
+  }
+
+  // Discover models
+  const modelSet = new Set();
+  for (const o of ordered) {
+    const asrs = o.asr || {};
+    for (const k of Object.keys(asrs)) modelSet.add(k);
+  }
+  const models = [...modelSet];
+  const colors = ["#76b900", "#58a6ff", "#ffb547", "#e5484d"];
+
+  // SVG line chart
+  const W = 520, H = 220, P = { t: 16, r: 16, b: 26, l: 36 };
+  const n = ordered.length;
+  const xs = ordered.map(o => o.iter);
+  const xMin = Math.min(...xs), xMax = Math.max(...xs);
+  const yMax = Math.max(0.1, ...ordered.flatMap(o => Object.values(o.asr || {})));
+  const x = v => P.l + (W - P.l - P.r) * (xMax === xMin ? 0.5 : (v - xMin) / (xMax - xMin));
+  const y = v => H - P.b - (H - P.t - P.b) * (v / yMax);
+
+  let svg = `<svg viewBox="0 0 ${W} ${H}" width="100%" style="display:block;">`;
+  // grid
+  for (let i = 0; i <= 4; i++) {
+    const val = (yMax / 4) * i;
+    const yy = y(val);
+    svg += `<line x1="${P.l}" x2="${W - P.r}" y1="${yy}" y2="${yy}" stroke="#252d35" stroke-width="1"/>`;
+    svg += `<text x="${P.l - 8}" y="${yy + 4}" fill="#7b8794" font-size="10" font-family="monospace" text-anchor="end">${(val*100).toFixed(0)}%</text>`;
+  }
+  // x labels (show a few ticks)
+  const xTicks = ordered.length <= 8 ? ordered : ordered.filter((_, i) => i % Math.ceil(ordered.length / 6) === 0);
+  for (const o of xTicks) {
+    svg += `<text x="${x(o.iter)}" y="${H - P.b + 16}" fill="#7b8794" font-size="10" font-family="monospace" text-anchor="middle">${o.iter}</text>`;
+  }
+  // series
+  models.forEach((m, i) => {
+    const color = colors[i % colors.length];
+    const pts = ordered.map(o => [x(o.iter), y((o.asr || {})[m] ?? 0)]);
+    const path = pts.map((p, k) => (k === 0 ? "M" : "L") + p[0].toFixed(1) + "," + p[1].toFixed(1)).join(" ");
+    svg += `<path d="${path}" fill="none" stroke="${color}" stroke-width="2" stroke-linejoin="round"/>`;
+    for (const [px, py] of pts) {
+      svg += `<circle cx="${px}" cy="${py}" r="2.5" fill="${color}"/>`;
+    }
+    legend.innerHTML += `<span class="lg"><span class="sw" style="background:${color}"></span>${esc(m)}</span>`;
+  });
+
+  svg += `</svg>`;
+  host.innerHTML = svg;
+}
+
+// =============================================================================
+// Hero chip (best ASR)
+// =============================================================================
+function renderHero() {
+  // Pick the best ASR across all (dataset, method, model). For self_evolving
+  // consider peak-across-iterations, not just latest.
+  let best = null;
+  for (const d of State.data.datasets) {
+    for (const mid of Object.keys(d.methods)) {
+      if (mid === "baseline") continue;
+      const method = d.methods[mid];
+      const rows = [];
+      for (const [name, s] of Object.entries(method.models || {})) {
+        rows.push({ name, asr: s.asr ?? 0, note: "" });
+      }
+      if (mid === "self_evolving") {
+        for (const [name, p] of Object.entries(method.peak_by_model || {})) {
+          rows.push({ name, asr: p.asr ?? 0, note: ` · iter ${p.iter}` });
+        }
+      }
+      for (const r of rows) {
+        if (r.asr > 0 && (best == null || r.asr > best.asr)) {
+          best = { dataset: d.label, method: mid, model: r.name, asr: r.asr, note: r.note };
+        }
+      }
+    }
+  }
+  const chip = document.getElementById("hero-chip-best");
+  if (best) {
+    const methodLabel = State.data.methods.find(m => m.id === best.method)?.label || best.method;
+    chip.innerHTML = `${esc(methodLabel)} <strong>${(best.asr*100).toFixed(0)}% ASR</strong> · ${esc(shortModel(best.model))} on ${esc(best.dataset)}${esc(best.note)}`;
+  } else {
+    chip.textContent = "awaiting first successful ASR …";
+  }
+  document.getElementById("last-updated").textContent =
+    "updated " + new Date(State.data.generated_at || Date.now()).toLocaleTimeString();
+}
+
+// =============================================================================
+// Orchestration
+// =============================================================================
+function renderAll() {
+  if (!State.data) return;
+  renderDatasetOptions();
+  renderMethodOptions();
+  renderMethodPane();
+  renderASRBoard();
+  renderSamples();
+  renderSelfEvolving();
+  renderHero();
+}
+
+function pickDefaultSelection() {
+  // Default: first dataset + baseline
+  const first = State.data.datasets[0];
+  if (!first) return;
+  if (!State.selectedDataset) State.selectedDataset = first.id;
+  if (!State.selectedMethod)  State.selectedMethod = "baseline";
+}
+
+// =============================================================================
+// Auto-demo
+// =============================================================================
+function buildCycleOrder() {
+  // Across all (dataset, method) pairs — include unavailable so judges see the
+  // "coming soon" state too.
+  const pairs = [];
+  for (const d of State.data.datasets) {
+    for (const m of State.data.methods) {
+      pairs.push([d.id, m.id]);
+    }
+  }
+  return pairs;
+}
+
+function startAutoDemo() {
+  stopAutoDemo();
+  if (!State.autoDemo) {
+    document.getElementById("demo-status").textContent = "paused";
+    return;
+  }
+  document.getElementById("demo-status").textContent = "cycling · 8s";
+  const tick = () => {
+    // Respect recent user interactions
+    const since = Date.now() - State.userInteractedAt;
+    if (since < State.pauseAfterInteractMs) {
+      document.getElementById("demo-status").textContent =
+        `paused · resume in ${Math.ceil((State.pauseAfterInteractMs - since)/1000)}s`;
+      State.autoDemoTimer = setTimeout(tick, 1000);
+      return;
+    }
+    const order = buildCycleOrder();
+    const idx = order.findIndex(
+      ([d, m]) => d === State.selectedDataset && m === State.selectedMethod
+    );
+    const next = order[(idx + 1 + order.length) % order.length];
+    State.selectedDataset = next[0];
+    State.selectedMethod  = next[1];
+    renderAll();
+    const lingerMs = State.selectedMethod === "self_evolving"
+      ? State.autoDemoLongMs : State.autoDemoIntervalMs;
+    document.getElementById("demo-status").textContent = `cycling · ${Math.round(lingerMs/1000)}s`;
+    State.autoDemoTimer = setTimeout(tick, lingerMs);
+  };
+  State.autoDemoTimer = setTimeout(tick, State.autoDemoIntervalMs);
+}
+function stopAutoDemo() {
+  if (State.autoDemoTimer) { clearTimeout(State.autoDemoTimer); State.autoDemoTimer = null; }
+}
+
+// =============================================================================
+// Polling
+// =============================================================================
+function startPolling() {
+  if (State.pollTimer) clearInterval(State.pollTimer);
+  State.pollTimer = setInterval(async () => {
+    try {
+      const fresh = await fetchState();
+      const changed = JSON.stringify(State.data) !== JSON.stringify(fresh);
+      if (changed) {
+        State.data = fresh;
+        // Re-render without altering user's selection
+        renderAll();
+      }
+    } catch (e) {
+      console.warn("poll failed:", e.message);
+    }
+  }, State.pollMs);
+}
+
+// =============================================================================
+// Boot
+// =============================================================================
+(async function init() {
+  try {
+    State.data = await fetchState();
+  } catch (e) {
+    document.body.innerHTML = `<div style="padding:40px;color:#e5484d;font-family:monospace">
+      Failed to load /api/state: ${esc(e.message)}<br>
+      Run <b>uv run presentation/serve.py</b> and reload.
+    </div>`;
+    return;
+  }
+  pickDefaultSelection();
+  renderAll();
+  startAutoDemo();
+  startPolling();
+
+  document.getElementById("auto-demo-toggle").addEventListener("change", (e) => {
+    State.autoDemo = e.target.checked;
+    markUserInteract();
+    if (State.autoDemo) startAutoDemo(); else stopAutoDemo();
+    document.getElementById("demo-status").textContent =
+      State.autoDemo ? "cycling · 8s" : "paused";
+  });
+})();
+</script>
+</body>
+</html>

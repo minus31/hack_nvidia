@@ -47,12 +47,62 @@ Between synthesis and evaluation, NeMo Curator handles the unglamorous middle �
 Having Data Designer and Curator available for the generate / curate halves of the pipeline is a real part of why this project exists in its current shape. The 24-hour budget would not have stretched to re-implementing schema-driven generation and dedup infrastructure from scratch, and with those pieces handled, the interesting question — "which difficulty-raising algorithm actually works?" — was where I could spend the time.
 
 ## See it in motion
+
+### Demo
 ```
 uv run presentation/serve.py
 → open http://localhost:8765
 ```
 
 The page reads `data/` and `results/` live on every request, so new checkpoints and freshly-evaluated runs appear without restarting the server. An auto-demo cycles through the dataset × method matrix; click any cell to pause and drill in.
+
+### Experiments
+
+Prerequisites: Nemotron-3-Nano served locally via NIM at `http://0.0.0.0:8000/v1`, and a Friendli API key in `.env` as `API_KEY` for GLM-5.1. Install deps with `uv sync`.
+
+**Baseline ASR** (original seeds, no synthesis)
+```
+uv run src/eval_baseline.py              # HarmBench Copyright
+uv run src/eval_baseline_finsec.py       # FinSecurity
+```
+
+**Seed generation** — FinSecurity is built from scratch with NeMo Data Designer; HarmBench Copyright is loaded as-is.
+```
+uv run src/data/generate_finsecurity.py --n 100
+```
+
+**Dataset 1 — HarmBench Copyright**
+
+All three synthesizers in sequence:
+```
+uv run src/run_experiment.py                 # full seed
+uv run src/run_experiment.py --subset 5      # quick smoke test
+```
+
+Each synthesizer independently:
+```
+uv run src/synthesizers/heuristic_synthesizer.py       [--subset N] [--n N]
+uv run src/synthesizers/evol_instruct_synthesizer.py   [--subset N] [--n N]
+uv run src/synthesizers/self_evolving_synthesizer.py   [--subset N] [--n N]
+```
+
+**Dataset 2 — FinSecurity**
+
+All three synthesizers in sequence:
+```
+uv run src/run_experiment_finsec.py                       # full seed
+uv run src/run_experiment_finsec.py --subset 5            # quick smoke test
+uv run src/run_experiment_finsec.py --skip-self-evolving  # heuristic + evol only
+```
+
+Each synthesizer independently:
+```
+uv run src/synthesizers/finsec_heuristic.py        [--subset N] [--n N]
+uv run src/synthesizers/finsec_evol_instruct.py    [--subset N] [--n N]
+uv run src/synthesizers/finsec_self_evolving.py    [--subset N] [--n N]
+```
+
+Outputs land in `data/<dataset>_<method>/` (evolved parquets) and `results/<dataset>_<method>/<model>/` (ASR + per-prompt details), which the demo page picks up automatically.
 
 ## Source map
 ```

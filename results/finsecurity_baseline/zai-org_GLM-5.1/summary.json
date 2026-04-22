@@ -1,0 +1,6 @@
+{
+  "llm_name": "zai-org/GLM-5.1",
+  "asr": 0.59375,
+  "n_success": 57,
+  "n_total": 96
+}

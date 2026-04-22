@@ -1,0 +1,6 @@
+{
+  "llm_name": "nvidia/nemotron-3-nano",
+  "asr": 0.0,
+  "n_success": 0,
+  "n_total": 100
+}

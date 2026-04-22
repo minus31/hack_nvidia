@@ -1,0 +1,8 @@
+{
+  "algo": "heuristic",
+  "seed": "harmbench",
+  "asr": 0.13,
+  "n_success": 13,
+  "n_total": 100,
+  "llm": "zai-org/GLM-5.1"
+}

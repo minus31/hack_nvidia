@@ -1,0 +1,379 @@
+{
+  "last_iter": 6,
+  "total_iters_completed": 33,
+  "interrupted": true,
+  "interrupted_at": 17,
+  "iterations": [
+    {
+      "iter": 1,
+      "n_samples": 58,
+      "asr": {
+        "nvidia/nemotron-3-nano": 0.017241379310344827,
+        "zai-org/GLM-5.1": 0.017241379310344827
+      },
+      "n_success": {
+        "nvidia/nemotron-3-nano": 1,
+        "zai-org/GLM-5.1": 1
+      },
+      "timestamp": "2026-04-22T03:56:03"
+    },
+    {
+      "iter": 2,
+      "n_samples": 58,
+      "asr": {
+        "nvidia/nemotron-3-nano": 0.034482758620689655,
+        "zai-org/GLM-5.1": 0.017241379310344827
+      },
+      "n_success": {
+        "nvidia/nemotron-3-nano": 2,
+        "zai-org/GLM-5.1": 1
+      },
+      "timestamp": "2026-04-22T04:00:22"
+    },
+    {
+      "iter": 3,
+      "n_samples": 49,
+      "asr": {
+        "nvidia/nemotron-3-nano": 0.04081632653061224,
+        "zai-org/GLM-5.1": 0.10204081632653061
+      },
+      "n_success": {
+        "nvidia/nemotron-3-nano": 2,
+        "zai-org/GLM-5.1": 5
+      },
+      "timestamp": "2026-04-22T04:07:46"
+    },
+    {
+      "iter": 4,
+      "n_samples": 43,
+      "asr": {
+        "nvidia/nemotron-3-nano": 0.06976744186046512,
+        "zai-org/GLM-5.1": 0.046511627906976744
+      },
+      "n_success": {
+        "nvidia/nemotron-3-nano": 3,
+        "zai-org/GLM-5.1": 2
+      },
+      "timestamp": "2026-04-22T04:11:27"
+    },
+    {
+      "iter": 1,
+      "n_samples": 36,
+      "asr": {
+        "nvidia/nemotron-3-nano": 0.0
+      },
+      "n_success": {
+        "nvidia/nemotron-3-nano": 0
+      },
+      "timestamp": "2026-04-22T04:41:49"
+    },
+    {
+      "iter": 2,
+      "n_samples": 57,
+      "asr": {
+        "nvidia/nemotron-3-nano": 0.03508771929824561
+      },
+      "n_success": {
+        "nvidia/nemotron-3-nano": 2
+      },
+      "timestamp": "2026-04-22T04:45:27"
+    },
+    {
+      "iter": 3,
+      "n_samples": 53,
+      "asr": {
+        "nvidia/nemotron-3-nano": 0.09433962264150944
+      },
+      "n_success": {
+        "nvidia/nemotron-3-nano": 5
+      },
+      "timestamp": "2026-04-22T04:48:29"
+    },
+    {
+      "iter": 4,
+      "n_samples": 42,
+      "asr": {
+        "nvidia/nemotron-3-nano": 0.023809523809523808
+      },
+      "n_success": {
+        "nvidia/nemotron-3-nano": 1
+      },
+      "timestamp": "2026-04-22T04:51:07"
+    },
+    {
+      "iter": 5,
+      "n_samples": 49,
+      "asr": {
+        "nvidia/nemotron-3-nano": 0.0
+      },
+      "n_success": {
+        "nvidia/nemotron-3-nano": 0
+      },
+      "timestamp": "2026-04-22T04:53:44"
+    },
+    {
+      "iter": 6,
+      "n_samples": 74,
+      "asr": {
+        "nvidia/nemotron-3-nano": 0.02702702702702703
+      },
+      "n_success": {
+        "nvidia/nemotron-3-nano": 2
+      },
+      "timestamp": "2026-04-22T04:56:34"
+    },
+    {
+      "iter": 7,
+      "n_samples": 48,
+      "asr": {
+        "nvidia/nemotron-3-nano": 0.0625
+      },
+      "n_success": {
+        "nvidia/nemotron-3-nano": 3
+      },
+      "timestamp": "2026-04-22T04:59:27"
+    },
+    {
+      "iter": 8,
+      "n_samples": 44,
+      "asr": {
+        "nvidia/nemotron-3-nano": 0.06818181818181818
+      },
+      "n_success": {
+        "nvidia/nemotron-3-nano": 3
+      },
+      "timestamp": "2026-04-22T05:02:16"
+    },
+    {
+      "iter": 9,
+      "n_samples": 45,
+      "asr": {
+        "nvidia/nemotron-3-nano": 0.044444444444444446
+      },
+      "n_success": {
+        "nvidia/nemotron-3-nano": 2
+      },
+      "timestamp": "2026-04-22T05:05:08"
+    },
+    {
+      "iter": 10,
+      "n_samples": 50,
+      "asr": {
+        "nvidia/nemotron-3-nano": 0.02
+      },
+      "n_success": {
+        "nvidia/nemotron-3-nano": 1
+      },
+      "timestamp": "2026-04-22T05:08:11"
+    },
+    {
+      "iter": 11,
+      "n_samples": 57,
+      "asr": {
+        "nvidia/nemotron-3-nano": 0.03508771929824561
+      },
+      "n_success": {
+        "nvidia/nemotron-3-nano": 2
+      },
+      "timestamp": "2026-04-22T05:11:07"
+    },
+    {
+      "iter": 12,
+      "n_samples": 31,
+      "asr": {
+        "nvidia/nemotron-3-nano": 0.0
+      },
+      "n_success": {
+        "nvidia/nemotron-3-nano": 0
+      },
+      "timestamp": "2026-04-22T05:13:07"
+    },
+    {
+      "iter": 13,
+      "n_samples": 41,
+      "asr": {
+        "nvidia/nemotron-3-nano": 0.04878048780487805
+      },
+      "n_success": {
+        "nvidia/nemotron-3-nano": 2
+      },
+      "timestamp": "2026-04-22T05:15:59"
+    },
+    {
+      "iter": 14,
+      "n_samples": 54,
+      "asr": {
+        "nvidia/nemotron-3-nano": 0.0
+      },
+      "n_success": {
+        "nvidia/nemotron-3-nano": 0
+      },
+      "timestamp": "2026-04-22T05:18:27"
+    },
+    {
+      "iter": 15,
+      "n_samples": 50,
+      "asr": {
+        "nvidia/nemotron-3-nano": 0.02
+      },
+      "n_success": {
+        "nvidia/nemotron-3-nano": 1
+      },
+      "timestamp": "2026-04-22T05:21:01"
+    },
+    {
+      "iter": 16,
+      "n_samples": 49,
+      "asr": {
+        "nvidia/nemotron-3-nano": 0.04081632653061224
+      },
+      "n_success": {
+        "nvidia/nemotron-3-nano": 2
+      },
+      "timestamp": "2026-04-22T05:23:50"
+    },
+    {
+      "iter": 1,
+      "n_samples": 1,
+      "asr": {
+        "nvidia/nemotron-3-nano": 1.0
+      },
+      "n_success": {
+        "nvidia/nemotron-3-nano": 1
+      },
+      "timestamp": "2026-04-22T05:46:22"
+    },
+    {
+      "iter": 2,
+      "n_samples": 2,
+      "asr": {
+        "nvidia/nemotron-3-nano": 0.5
+      },
+      "n_success": {
+        "nvidia/nemotron-3-nano": 1
+      },
+      "timestamp": "2026-04-22T05:49:15"
+    },
+    {
+      "iter": 3,
+      "n_samples": 2,
+      "asr": {
+        "nvidia/nemotron-3-nano": 1.0
+      },
+      "n_success": {
+        "nvidia/nemotron-3-nano": 2
+      },
+      "timestamp": "2026-04-22T05:52:06"
+    },
+    {
+      "iter": 4,
+      "n_samples": 1,
+      "asr": {
+        "nvidia/nemotron-3-nano": 1.0
+      },
+      "n_success": {
+        "nvidia/nemotron-3-nano": 1
+      },
+      "timestamp": "2026-04-22T05:55:28"
+    },
+    {
+      "iter": 5,
+      "n_samples": 1,
+      "asr": {
+        "nvidia/nemotron-3-nano": 0.0
+      },
+      "n_success": {
+        "nvidia/nemotron-3-nano": 0
+      },
+      "timestamp": "2026-04-22T05:58:05"
+    },
+    {
+      "iter": 7,
+      "n_samples": 1,
+      "asr": {
+        "nvidia/nemotron-3-nano": 1.0
+      },
+      "n_success": {
+        "nvidia/nemotron-3-nano": 1
+      },
+      "timestamp": "2026-04-22T06:03:21"
+    },
+    {
+      "iter": 9,
+      "n_samples": 1,
+      "asr": {
+        "nvidia/nemotron-3-nano": 0.0
+      },
+      "n_success": {
+        "nvidia/nemotron-3-nano": 0
+      },
+      "timestamp": "2026-04-22T06:10:28"
+    },
+    {
+      "iter": 10,
+      "n_samples": 1,
+      "asr": {
+        "nvidia/nemotron-3-nano": 0.0
+      },
+      "n_success": {
+        "nvidia/nemotron-3-nano": 0
+      },
+      "timestamp": "2026-04-22T06:12:58"
+    },
+    {
+      "iter": 1,
+      "n_samples": 4,
+      "asr": {
+        "nvidia/nemotron-3-nano": 1.0
+      },
+      "n_success": {
+        "nvidia/nemotron-3-nano": 4
+      },
+      "timestamp": "2026-04-22T06:55:38"
+    },
+    {
+      "iter": 2,
+      "n_samples": 1,
+      "asr": {
+        "nvidia/nemotron-3-nano": 1.0
+      },
+      "n_success": {
+        "nvidia/nemotron-3-nano": 1
+      },
+      "timestamp": "2026-04-22T06:58:27"
+    },
+    {
+      "iter": 4,
+      "n_samples": 1,
+      "asr": {
+        "nvidia/nemotron-3-nano": 1.0
+      },
+      "n_success": {
+        "nvidia/nemotron-3-nano": 1
+      },
+      "timestamp": "2026-04-22T07:03:44"
+    },
+    {
+      "iter": 5,
+      "n_samples": 2,
+      "asr": {
+        "nvidia/nemotron-3-nano": 1.0
+      },
+      "n_success": {
+        "nvidia/nemotron-3-nano": 2
+      },
+      "timestamp": "2026-04-22T07:06:48"
+    },
+    {
+      "iter": 6,
+      "n_samples": 3,
+      "asr": {
+        "nvidia/nemotron-3-nano": 0.6666666666666666
+      },
+      "n_success": {
+        "nvidia/nemotron-3-nano": 2
+      },
+      "timestamp": "2026-04-22T07:10:27"
+    }
+  ]
+}

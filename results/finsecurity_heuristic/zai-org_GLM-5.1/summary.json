@@ -1,0 +1,8 @@
+{
+  "algo": "heuristic",
+  "seed": "finsecurity",
+  "asr": 0.6590909090909091,
+  "n_success": 58,
+  "n_total": 88,
+  "llm": "zai-org/GLM-5.1"
+}

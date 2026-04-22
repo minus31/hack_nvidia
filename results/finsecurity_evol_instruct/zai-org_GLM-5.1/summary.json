@@ -1,0 +1,8 @@
+{
+  "algo": "evol_instruct",
+  "seed": "finsecurity",
+  "asr": 0.6382978723404256,
+  "n_success": 60,
+  "n_total": 94,
+  "llm": "zai-org/GLM-5.1"
+}

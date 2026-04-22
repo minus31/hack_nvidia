@@ -1,0 +1,8 @@
+{
+  "algo": "self_evolving_iter_0001",
+  "seed": "finsecurity",
+  "asr": 1.0,
+  "n_success": 4,
+  "n_total": 4,
+  "llm": "nvidia/nemotron-3-nano"
+}

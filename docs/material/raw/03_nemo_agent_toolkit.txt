@@ -1,0 +1,1262 @@
+NeMo Agent Toolkit Quick Start Guide
+Package: nvidia-nat  |  CLI: nat  |  Docs: docs.nvidia.com/nemo/agent-toolkit/latest/  |  GitHub: github.com/NVIDIA/NeMo-Agent-Toolkit
+1. 설치 방법
+요구사항
+Python 3.11 / 3.12 / 3.13
+NVIDIA API Key (build.nvidia.com에서 무료 발급 가능)
+nvidia-nat v1.5.0 (2026년 4월 기준)
+uv 설치 및 가상환경 생성
+
+NeMo Agent Toolkit 공식 예제들은 모두 uv를 패키지 관리자로 사용합니다. 이 가이드의 모든 예제가 동일한 가상환경을 공유합니다.
+
+bash
+Copy
+# uv 설치 (macOS / Linux)
+curl -LsSf https://astral.sh/uv/install.sh | sh
+# Windows (PowerShell): powershell -ExecutionPolicy ByPass -c "irm https://astral.sh/uv/install.ps1 | iex"
+
+# 작업 디렉토리 생성 및 가상환경 세팅
+mkdir nat-examples && cd nat-examples
+uv venv .venv --python 3.12
+
+# 가상환경 활성화
+source .venv/bin/activate        # macOS / Linux
+# .venv\Scripts\activate         # Windows
+NAT 설치 및 환경변수 설정
+
+NAT 설치
+
+bash
+Copy
+# 기본 패키지 설치
+uv pip install nvidia-nat
+
+# LangChain 기반 도구(wiki_search, code_generation 등) 포함 설치 (권장)
+uv pip install "nvidia-nat[langchain]"
+
+# MCP Client/Server 기능 — nat mcp 명령어 포함 (선택 — Advanced Example에서 사용)
+uv pip install "nvidia-nat[mcp]"
+
+# A2A Client/Server 기능 — nat a2a 명령어 포함 (선택 — Advanced Example에서 사용)
+uv pip install "nvidia-nat[a2a]"
+
+# 메모리 플러그인 설치 (선택 — Advanced Example에서 사용)
+uv pip install "nvidia-nat[mem0ai]"  # Mem0 Cloud 사용 시 (NAT 통합 포함)
+uv pip install nvidia-nat-zep-cloud  # Zep Cloud 사용 시
+
+# 설치 확인
+nat --version
+nat --help
+
+환경 변수 설정
+
+bash
+Copy
+export NVIDIA_API_KEY=<your_nvidia_api_key>
+export MEM0_API_KEY=<your_mem0_api_key>      # Advanced Example에서 사용
+2. Basic Example: ReAct Agent 만들고 배포하기
+
+GitHub 참고 예제: examples/agents/react
+
+목표: Wikipedia 검색 + Python 코드 생성 도구를 가진 ReAct Agent를 만들고, CLI로 실행한 뒤 REST API 서버로 배포하여 curl로 테스트합니다.
+
+전제 조건: 1. 설치 방법에서 만든 nat-examples/.venv 가상환경이 활성화된 상태여야 합니다.
+
+프로젝트 구조
+bash
+Copy
+# nat-examples/ 안에서 실행
+mkdir hello-agent
+touch hello-agent/config.yml
+디렉토리 구조
+nat-examples/
+├── .venv/                  # 공유 가상환경 (모든 예제가 재활용)
+├── .env                    # 환경 변수
+└── hello-agent/
+    └── config.yml          # 에이전트 설정 파일 (이것만 있으면 됨)
+Step 1: config.yml 작성
+yaml
+Copy
+# hello-agent/config.yml
+
+# ── LLM 정의 ──────────────────────────────────────────────────
+llms:
+  nim_llm:
+    _type: nim                              # NVIDIA NIM 공급자
+    model_name: nvidia/nemotron-3-nano-30b-a3b  # 사용할 모델
+    temperature: 0.0                        # 결정론적 응답 (낮을수록 일관성 높음)
+    max_tokens: 512                         # 최대 응답 토큰 수
+    chat_template_kwargs:
+      enable_thinking: false                # 빠른 응답을 위해 thinking 모드 비활성화
+
+# ── 도구(Function) 정의 ────────────────────────────────────────
+functions:
+  wikipedia_search:
+    _type: wiki_search                      # 내장 Wikipedia 검색 도구
+    max_results: 3                          # 반환할 최대 검색 결과 수
+
+  current_datetime:
+    _type: current_datetime                 # 현재 날짜/시간 반환 도구
+
+  code_generator:
+    _type: code_generation                  # 코드 생성 도구 (LangChain 기반)
+    programming_language: "Python"          # 생성할 코드 언어
+    description: "Python 코드를 생성합니다. 코드 관련 질문에는 반드시 이 도구만 사용하세요."
+    llm_name: nim_llm                       # 코드 생성에 사용할 LLM
+    verbose: true
+
+# ── 워크플로우(Agent) 정의 ────────────────────────────────────
+workflow:
+  _type: react_agent                        # ReAct 패턴 에이전트
+  tool_names:                               # 이 에이전트가 사용할 도구 목록
+    - wikipedia_search
+    - current_datetime
+    - code_generator
+  llm_name: nim_llm                         # 에이전트의 추론에 사용할 LLM
+  verbose: true                             # 추론 과정 로깅 활성화
+  parse_agent_response_max_retries: 2       # 응답 파싱 실패 시 재시도 횟수
+config.yml 구조 해설
+config.yml
+├── llms          → 워크플로우에서 참조할 LLM 인스턴스들 (이름으로 참조)
+├── functions     → 에이전트가 호출할 수 있는 도구들 (이름으로 참조)
+└── workflow      → 에이전트 타입과 사용할 llm/tool 바인딩
+
+_type 필드가 핵심입니다. 모든 컴포넌트는 _type으로 종류를 지정하고, 나머지 필드는 해당 타입의 설정값입니다. tool_names와 llm_name은 위에서 정의한 인스턴스 이름을 참조합니다.
+
+ReAct Agent 동작 원리
+사용자 입력
+    ↓
+[Agent Node] 추론: "이 질문에 어떤 도구를 써야 하나?"
+    ↓
+[Tool Node] 도구 실행: wikipedia_search("Dijkstra")
+    ↓
+[Agent Node] 추론: "검색 결과를 바탕으로 답변을 완성할 수 있나?"
+    ↓ (충분한 정보가 모이면)
+최종 답변 반환
+Step 2: CLI로 실행
+bash
+Copy
+# 가상환경 활성화 확인 (이미 되어 있다면 생략)
+source .venv/bin/activate
+
+# 기본 실행
+nat run --config_file hello-agent/config.yml \
+        --input "다익스트라 알고리즘이 무엇인지 설명하고, 파이썬으로 구현 예시를 만들어줘"
+
+verbose: true 설정 덕분에 에이전트가 어떤 도구를 선택하고 어떻게 추론하는지 단계별로 출력됩니다.
+
+실행 출력 예시
+[Agent] 생각 중: Wikipedia에서 다익스트라 알고리즘을 검색해야겠다.
+[Tool] wikipedia_search 호출: "Dijkstra's algorithm"
+[Agent] 생각 중: 검색 결과를 얻었다. 이제 파이썬 코드를 생성해야겠다.
+[Tool] code_generator 호출: "Python implementation of Dijkstra's algorithm"
+[Agent] 최종 답변 생성 중...
+Step 3: HTTP API 서버로 배포
+bash
+Copy
+nat serve --config_file hello-agent/config.yml
+# → 기본적으로 http://localhost:8000 에서 시작
+
+서버가 기동되면 다음 엔드포인트가 열립니다:
+
+엔드포인트	설명
+POST /generate	동기 응답 (전체 응답을 한 번에 반환)
+POST /generate/stream	스트리밍 응답 (SSE 방식으로 토큰 단위 반환)
+GET /health	서버 상태 확인
+Step 4: REST API로 테스트
+
+동기 요청 (일반 응답):
+
+bash
+Copy
+curl --request POST \
+  --url http://localhost:8000/generate \
+  --header 'Content-Type: application/json' \
+  --data '{
+    "messages": [
+      {
+        "role": "user",
+        "content": "오늘 날짜가 뭐야? 그리고 피보나치 수열을 파이썬으로 짜줘"
+      }
+    ]
+  }'
+
+스트리밍 요청 (실시간 토큰 출력):
+
+bash
+Copy
+curl --request POST \
+  --url http://localhost:8000/generate/stream \
+  --header 'Content-Type: application/json' \
+  --data '{
+    "messages": [
+      {"role": "user", "content": "파이썬의 GIL이 뭐야?"}
+    ]
+  }'
+
+멀티턴 대화 (대화 히스토리 포함):
+
+bash
+Copy
+curl --request POST \
+  --url http://localhost:8000/generate \
+  --header 'Content-Type: application/json' \
+  --data '{
+    "messages": [
+      {"role": "user",      "content": "파이썬의 GIL이 뭐야?"},
+      {"role": "assistant", "content": "GIL(Global Interpreter Lock)은..."},
+      {"role": "user",      "content": "그럼 GIL을 우회하는 방법은?"}
+    ]
+  }'
+Step 5: (선택) 자동 평가 실행
+
+평가 데이터셋을 config에 추가하면 RAGAS 메트릭으로 에이전트를 자동 평가할 수 있습니다.
+
+yaml
+Copy
+# config.yml에 eval 섹션 추가
+eval:
+  general:
+    output_dir: .tmp/eval_results/
+    dataset:
+      _type: json
+      file_path: eval_data.json    # [{"input": "...", "expected": "..."}, ...]
+  evaluators:
+    accuracy:
+      _type: ragas
+      metric: AnswerAccuracy
+      llm_name: nim_llm
+    relevance:
+      _type: ragas
+      metric: ContextRelevance
+      llm_name: nim_llm
+bash
+Copy
+nat eval --config_file hello-agent/config.yml
+3. Advanced Example #1: 기억하는 다기능 Research Assistant
+
+GitHub 참고 예제:
+
+Custom Function: examples/getting_started/simple_calculator
+Memory: examples/agents/auto_memory_wrapper
+MCP Client: examples/MCP/simple_calculator_mcp
+A2A: examples/A2A/math_assistant_a2a
+
+목표: 하나의 에이전트 워크플로우에서 다음 네 가지 고급 기능을 통합합니다.
+
+기능	구현 방식
+Custom Function	Python으로 커스텀 도구(단위 변환기) 구현 및 등록
+Memory	auto_memory_agent로 대화 기록 자동 저장/검색
+MCP Client	외부 MCP 서버(시간 조회)의 도구를 에이전트에 연결
+A2A + MCP Server	완성된 워크플로우를 A2A Agent / MCP Server로 노출
+최종 아키텍처
+Research Assistant 아키텍처
+             사용자 요청 (HTTP / MCP / A2A)
+                            │
+                            ▼
+┌──────────────────────────────────────────────────────────────┐
+│                      Research Assistant                      │
+│                                                              │
+│  ┌───────────────────────────────────────────────────────┐   │
+│  │                   auto_memory_agent                   │   │
+│  │                                                       │   │
+│  │  ┌─────────────────────────────────────────────────┐  │   │
+│  │  │                inner_react_agent                │  │   │
+│  │  │  - unit_converter   (custom function)           │  │   │
+│  │  │  - wikipedia_search (built-in)                  │  │   │
+│  │  │  - get_current_time (MCP)                       │  │   │
+│  │  └─────────────────────────────────────────────────┘  │   │
+│  │  Memory: Mem0                                         │   │
+│  └───────────────────────────────────────────────────────┘   │
+└──────────────────────────────────────────────────────────────┘
+                            │
+                            ▼ 배포
+            ┌───────────────────────────────┐
+            │   HTTP API  │   MCP  │   A2A  │
+            └───────────────────────────────┘
+프로젝트 구조
+bash
+Copy
+# nat-examples/ 안에서 실행
+mkdir -p research-assistant/src/nat_research_assistant/configs
+
+touch research-assistant/pyproject.toml
+touch research-assistant/src/nat_research_assistant/__init__.py
+touch research-assistant/src/nat_research_assistant/register.py
+touch research-assistant/src/nat_research_assistant/configs/config.yml
+touch research-assistant/src/nat_research_assistant/configs/config-no-memory.yml
+디렉토리 구조
+nat-examples/
+├── .venv/                              # 공유 가상환경 (Hello World와 동일)
+├── .env
+├── hello-agent/                        # Hello World 예제
+│   └── config.yml
+└── research-assistant/                 # Advanced 예제 (Python 패키지)
+    ├── pyproject.toml                  # 패키지 메타데이터 + entry_points
+    └── src/
+        └── nat_research_assistant/
+            ├── __init__.py
+            ├── register.py             # 커스텀 함수(단위 변환기) 등록
+            └── configs/
+                ├── config.yml          # 메인 워크플로우 설정
+                └── config-no-memory.yml  # 메모리 없는 버전 (테스트용)
+Step 1: 패키지 설정 (pyproject.toml)
+
+NAT의 플러그인 시스템은 Python 패키지의 entry_points를 통해 커스텀 함수를 자동 등록합니다.
+
+toml
+Copy
+# research-assistant/pyproject.toml
+[build-system]
+requires = ["setuptools>=64"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[project]
+name = "nat-research-assistant"
+version = "0.1.0"
+requires-python = ">=3.11"
+
+[project.entry-points.'nat.components']
+# 'nat.components' entry point에 등록된 모듈은 NAT가 시작 시 자동으로 import함
+nat_research_assistant = "nat_research_assistant.register"
+
+entry_points의 역할: nat run을 실행할 때 NAT는 nat.components 그룹에 등록된 모든 모듈을 자동으로 로드합니다. 이를 통해 YAML 내의 _type: unit_converter가 우리가 만든 Python 클래스와 매핑됩니다.
+
+⚠️ 주의: 문서에는 nat.plugins 그룹이 언급되어 있으나, 실제 NAT 런타임이 스캔하는 그룹은 nat.components입니다. 공식 예제(simple_calculator)도 nat.components를 사용합니다.
+
+참고: simple_calculator 예제의 register.py가 이 패턴의 공식 레퍼런스입니다.
+
+Step 2: 커스텀 함수 구현 (register.py)
+
+단위 변환 도구를 Python으로 구현하고 NAT 플러그인 시스템에 등록합니다.
+
+python
+Copy
+# src/nat_research_assistant/register.py
+
+from collections.abc import AsyncGenerator
+
+from pydantic import Field
+
+from nat.builder.builder import Builder
+from nat.builder.function import FunctionGroup
+from nat.cli.register_workflow import register_function_group
+from nat.data_models.function import FunctionGroupBaseConfig
+
+
+# ① Config 클래스: YAML의 _type: unit_converter 와 매핑되는 설정 모델
+#    name="unit_converter"가 YAML의 _type 값이 됨
+class UnitConverterConfig(FunctionGroupBaseConfig, name="unit_converter"):
+    include: list[str] = Field(
+        default_factory=lambda: ["length", "weight", "temperature"],
+        description="포함할 변환 카테고리 목록"
+    )
+
+
+# ② @register_function_group 데코레이터로 NAT에 이 함수 그룹을 등록
+@register_function_group(config_type=UnitConverterConfig)
+async def unit_converter(
+    _config: UnitConverterConfig, _builder: Builder
+) -> AsyncGenerator[FunctionGroup, None]:
+    """단위 변환 도구 그룹을 생성하고 등록합니다."""
+
+    group = FunctionGroup(config=_config)  # ③ FunctionGroup 생성
+
+    # ④ 각 도구 함수 정의: async def + docstring이 LLM에게 도구 설명으로 전달됨
+    async def _convert_length(value: float, from_unit: str, to_unit: str) -> str:
+        """길이 단위를 변환합니다.
+        지원 단위: meter(m), kilometer(km), mile(mi), foot(ft), inch(in), centimeter(cm)
+        예시: value=1.0, from_unit="mile", to_unit="kilometer"
+        """
+        factors_to_meter = {
+            "m": 1.0, "meter": 1.0,
+            "km": 1000.0, "kilometer": 1000.0,
+            "mi": 1609.344, "mile": 1609.344,
+            "ft": 0.3048, "foot": 0.3048,
+            "in": 0.0254, "inch": 0.0254,
+            "cm": 0.01, "centimeter": 0.01,
+        }
+        from_key = from_unit.lower()
+        to_key = to_unit.lower()
+        if from_key not in factors_to_meter:
+            raise ValueError(f"지원하지 않는 단위: {from_unit}")
+        if to_key not in factors_to_meter:
+            raise ValueError(f"지원하지 않는 단위: {to_unit}")
+
+        result = value * factors_to_meter[from_key] / factors_to_meter[to_key]
+        return f"{value} {from_unit} = {result:.4f} {to_unit}"
+
+    async def _convert_weight(value: float, from_unit: str, to_unit: str) -> str:
+        """무게 단위를 변환합니다.
+        지원 단위: kg(kilogram), g(gram), lb(pound), oz(ounce), t(metric ton)
+        예시: value=70.0, from_unit="kg", to_unit="lb"
+        """
+        factors_to_kg = {
+            "kg": 1.0, "kilogram": 1.0,
+            "g": 0.001, "gram": 0.001,
+            "lb": 0.453592, "pound": 0.453592,
+            "oz": 0.0283495, "ounce": 0.0283495,
+            "t": 1000.0, "ton": 1000.0,
+        }
+        from_key = from_unit.lower()
+        to_key = to_unit.lower()
+        if from_key not in factors_to_kg:
+            raise ValueError(f"지원하지 않는 단위: {from_unit}")
+        if to_key not in factors_to_kg:
+            raise ValueError(f"지원하지 않는 단위: {to_unit}")
+
+        result = value * factors_to_kg[from_key] / factors_to_kg[to_key]
+        return f"{value} {from_unit} = {result:.4f} {to_unit}"
+
+    async def _convert_temperature(value: float, from_unit: str, to_unit: str) -> str:
+        """온도 단위를 변환합니다.
+        지원 단위: celsius(C), fahrenheit(F), kelvin(K)
+        예시: value=100.0, from_unit="celsius", to_unit="fahrenheit"
+        """
+        from_unit = from_unit.lower().strip()
+        to_unit = to_unit.lower().strip()
+
+        # 먼저 섭씨로 변환
+        if from_unit in ("c", "celsius"):
+            celsius = value
+        elif from_unit in ("f", "fahrenheit"):
+            celsius = (value - 32) * 5 / 9
+        elif from_unit in ("k", "kelvin"):
+            celsius = value - 273.15
+        else:
+            raise ValueError(f"지원하지 않는 단위: {from_unit}")
+
+        # 섭씨에서 목표 단위로 변환
+        if to_unit in ("c", "celsius"):
+            result = celsius
+        elif to_unit in ("f", "fahrenheit"):
+            result = celsius * 9 / 5 + 32
+        elif to_unit in ("k", "kelvin"):
+            result = celsius + 273.15
+        else:
+            raise ValueError(f"지원하지 않는 단위: {to_unit}")
+
+        return f"{value} {from_unit} = {result:.2f} {to_unit}"
+
+    # ⑤ 그룹에 함수 추가: name은 YAML tool_names에서 참조될 이름
+    if "length" in _config.include:
+        group.add_function(name="length", fn=_convert_length, description=_convert_length.__doc__)
+    if "weight" in _config.include:
+        group.add_function(name="weight", fn=_convert_weight, description=_convert_weight.__doc__)
+    if "temperature" in _config.include:
+        group.add_function(name="temperature", fn=_convert_temperature, description=_convert_temperature.__doc__)
+
+    yield group  # ⑥ 반드시 yield로 그룹 반환
+
+코드 핵심 포인트:
+
+FunctionGroupBaseConfig를 상속하고 name="unit_converter"를 지정하면 YAML에서 _type: unit_converter로 참조 가능
+각 도구 함수는 async def로 정의하며, docstring이 LLM에게 전달되는 도구 설명이 됩니다
+group.add_function(name=..., fn=..., description=...)으로 함수 등록 — YAML에서는 unit_converter__length 형태로 참조됨
+Step 3: MCP 서버 준비
+
+참고 예제: examples/MCP/simple_calculator_mcp — MCP 클라이언트/서버 통합의 공식 레퍼런스
+
+외부 MCP 서버로부터 현재 시간 조회 도구를 가져옵니다. nat mcp 명령어와 MCP 클라이언트 기능은 nvidia-nat[mcp] 패키지에 포함되어 있으므로, 아직 설치하지 않았다면 지금 설치합니다.
+
+bash
+Copy
+# MCP 지원 패키지 설치 (nat mcp 명령어 포함)
+uv pip install "nvidia-nat[mcp]"
+
+# 예제에서 사용할 시간 조회 MCP 서버도 함께 설치
+uv pip install mcp-server-time
+
+테스트로 직접 실행해 동작 확인:
+
+bash
+Copy
+# stdio 전송 방식으로 MCP 서버의 도구 목록 확인
+nat mcp client tool list \
+  --transport stdio \
+  --command "python" \
+  --args "-m mcp_server_time --local-timezone=Asia/Seoul"
+
+# 특정 도구의 상세 스키마 확인
+nat mcp client tool list \
+  --transport stdio \
+  --command "python" \
+  --args "-m mcp_server_time --local-timezone=Asia/Seoul" \
+  --tool get_current_time --detail
+Step 4: 통합 config.yml
+
+참고 예제: examples/agents/auto_memory_wrapper/configs/config_mem0.yml — auto_memory_agent 설정의 공식 레퍼런스
+
+Memory component가 필요한 이유 — NAT에서 대화 컨텍스트를 유지하는 방법은 두 가지입니다.
+
+방법 A: 클라이언트 측 히스토리 (memory component 불필요)
+
+messages 배열에 이전 대화를 직접 포함해서 보내는 방식입니다. NAT 서버는 별도 상태를 저장하지 않고, 요청마다 주어진 메시지 전체를 LLM에 전달합니다.
+
+bash
+Copy
+curl -X POST http://localhost:8000/generate \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "messages": [
+      {"role": "user",      "content": "파이썬의 GIL이 뭐야?"},
+      {"role": "assistant", "content": "GIL은 ..."},
+      {"role": "user",      "content": "그럼 우회 방법은?"}
+    ]
+  }'
+
+단순 챗봇처럼 한 세션 안에서만 맥락을 유지하면 되는 경우 이 방법으로 충분합니다.
+
+방법 B: Memory component (auto_memory_agent)
+
+방법 A만으로는 해결되지 않는 상황이 있습니다.
+
+한계	설명
+세션 간 기억 불가	서버 재시작 또는 새 세션이 시작되면 이전 대화가 사라짐
+컨텍스트 윈도우 한계	대화가 길어지면 LLM이 처리할 수 있는 토큰 수를 초과
+관련 정보만 선별 불가	전체 히스토리를 그대로 넣어 노이즈 증가, 비용 상승
+사용자 분리 불가	멀티테넌트 환경에서 사용자별 기억을 격리하기 어려움
+
+auto_memory_agent는 이를 다음과 같이 해결합니다.
+
+기능	클라이언트 히스토리	auto_memory_agent
+세션 간 기억 유지	✗	✓ Mem0/Zep에 영구 저장
+컨텍스트 윈도우 무제한	✗	✓ 관련 기억만 압축·검색
+관련 정보만 주입	✗	✓ 시맨틱 검색으로 선별
+사용자별 메모리 분리	직접 구현	✓ user_id 기반 자동 격리
+
+메모리, 커스텀 함수, MCP 클라이언트를 모두 통합한 워크플로우 설정입니다.
+
+yaml
+Copy
+# research-assistant/src/nat_research_assistant/configs/config.yml
+
+# ── 전역 설정 ─────────────────────────────────────────────────
+general:
+  telemetry:
+    logging:
+      console:
+        _type: console
+        level: INFO    # DEBUG로 변경하면 더 상세한 로그 출력
+
+# ── LLM 정의 ─────────────────────────────────────────────────
+llms:
+  nim_llm:
+    _type: nim
+    model_name: nvidia/nemotron-3-super-120b-a12b  # 메모리 처리에 충분한 크기의 Nemotron Super 모델
+    temperature: 0.0
+    max_tokens: 1024
+
+# ── 메모리 백엔드 정의 ────────────────────────────────────────
+# auto_memory_agent가 이 메모리를 사용해 대화를 자동으로 저장/검색함
+memory:
+  conversation_memory:
+    _type: mem0_memory
+    # MEM0_API_KEY 환경 변수에서 자동으로 인증 정보 로드
+
+# ── 커스텀 함수 그룹 정의 ─────────────────────────────────────
+# register.py에서 name="unit_converter"로 등록한 FunctionGroup과 매핑됨
+function_groups:
+  converter:
+    _type: unit_converter
+    include: [length, weight, temperature]  # 사용할 변환 카테고리
+
+  # MCP 클라이언트: mcp-server-time 패키지를 stdio 방식으로 직접 실행
+  # 별도 MCP 서버를 띄울 필요 없이 subprocess로 자동 관리됨
+  mcp_time:
+    _type: mcp_client
+    server:
+      transport: stdio                              # 로컬 프로세스로 실행
+      command: "python"
+      args: ["-m", "mcp_server_time", "--local-timezone=Asia/Seoul"]
+    tool_overrides:
+      get_current_time:
+        # 도구 이름을 alias로 덮어쓸 수 있음 (충돌 방지)
+        alias: get_current_time_kst
+        description: "현재 한국 시간(KST)을 반환합니다. 현재 시각이 필요할 때 사용하세요."
+    include:
+      - get_current_time_kst  # alias를 include에 지정
+
+# ── 개별 도구 정의 ────────────────────────────────────────────
+functions:
+  wikipedia_search:
+    _type: wiki_search
+    max_results: 3
+
+  # inner_agent를 functions 섹션에 정의
+  # auto_memory_agent가 이 에이전트를 inner_agent_name으로 참조함
+  research_react_agent:
+    _type: react_agent
+    llm_name: nim_llm
+    tool_names:
+      - converter            # 커스텀 단위 변환 도구 그룹
+      - mcp_time             # MCP에서 가져온 시간 도구 그룹
+      - wikipedia_search     # 내장 위키피디아 검색 도구
+    verbose: true
+    parse_agent_response_max_retries: 3
+
+# ── 최상위 워크플로우: 메모리 자동 래퍼 ─────────────────────
+# auto_memory_agent는 inner_agent를 감싸서 메모리를 투명하게 처리함
+# 사용자가 도구를 따로 호출하거나 프롬프트를 수정할 필요 없음
+workflow:
+  _type: auto_memory_agent
+  inner_agent_name: research_react_agent  # 위에서 functions에 정의한 에이전트
+  memory_name: conversation_memory        # 위에서 memory에 정의한 메모리 백엔드
+  llm_name: nim_llm
+  verbose: true
+  description: "단위 변환, 위키피디아 검색, 시간 조회가 가능하며 대화를 기억하는 리서치 어시스턴트"
+
+  # 메모리 동작 세부 제어 (모두 기본값 true)
+  save_user_messages_to_memory: true      # 사용자 메시지를 메모리에 저장
+  retrieve_memory_for_every_response: true # 매 응답마다 관련 기억을 검색
+  save_ai_messages_to_memory: true        # AI 응답도 메모리에 저장
+
+auto_memory_agent 동작 흐름:
+
+auto_memory_agent 동작 흐름
+사용자 메시지 입력
+        ↓
+[1] 메모리 검색: "이 사용자에 관련된 과거 대화가 있나?"
+        ↓
+[2] 컨텍스트 주입: 관련 기억을 시스템 메시지로 주입
+        ↓
+[3] inner_agent 실행 (react_agent가 도구를 사용해 답변)
+        ↓
+[4] 메모리 저장: 이번 대화를 메모리에 저장
+        ↓
+최종 응답 반환
+
+MCP 클라이언트 동작 방식:
+
+_type: mcp_client를 사용하면 NAT가 stdio 방식의 경우 MCP 서버 프로세스를 자동으로 관리합니다. streamable-http 방식은 이미 실행 중인 원격 MCP 서버에 연결합니다.
+
+yaml
+Copy
+# stdio 방식: 로컬 프로세스를 직접 실행
+server:
+  transport: stdio
+  command: "python"
+  args: ["-m", "mcp_server_time"]
+
+# streamable-http 방식: 원격 MCP 서버 연결
+server:
+  transport: streamable-http
+  url: "http://localhost:9901/mcp"
+Step 5: 패키지 설치 및 실행
+
+공유 가상환경이 활성화된 상태에서 research-assistant 패키지를 개발 모드로 설치합니다. 이렇게 하면 entry_points가 등록되어 NAT가 unit_converter 타입을 인식합니다.
+
+bash
+Copy
+# 가상환경 활성화 확인
+source .venv/bin/activate   # 이미 활성화되어 있다면 생략
+
+# Mem0 NAT 통합 패키지 설치 (mem0ai 단독 설치로는 NAT가 인식하지 못함)
+uv pip install "nvidia-nat[mem0ai]"
+
+# 커스텀 플러그인 패키지를 공유 venv에 개발 모드로 설치 (entry_points 등록)
+# -e 옵션: 소스 코드를 직접 참조하므로 코드 수정 시 재설치 불필요
+uv pip install -e research-assistant/
+
+# 설치 확인: unit_converter 타입이 등록되었는지 확인
+nat info plugins 2>/dev/null | grep -i unit || echo "플러그인 등록 완료"
+bash
+Copy
+# 단일 쿼리 실행 테스트 (커스텀 함수 확인)
+nat run \
+  --config_file research-assistant/src/nat_research_assistant/configs/config.yml \
+  --input "마라톤 풀코스 42.195km를 마일로 환산하면 몇 마일이야?"
+
+메모리가 잘 동작하는지 확인하기 위해 연속 대화 테스트:
+
+bash
+Copy
+# 첫 번째 대화
+nat run --config_file research-assistant/src/nat_research_assistant/configs/config.yml \
+        --input "나는 철인 3종 경기에 관심이 많아"
+
+# 두 번째 대화 (앞의 대화를 기억해야 함)
+nat run --config_file research-assistant/src/nat_research_assistant/configs/config.yml \
+        --input "방금 얘기한 스포츠의 수영 구간 거리를 야드로 환산해줘"
+# → 메모리에서 "철인 3종 경기"를 기억해 수영 구간(1.9km 또는 3.8km)을 야드로 변환
+Step 6: HTTP API 서버로 배포
+bash
+Copy
+nat serve \
+  --config_file research-assistant/src/nat_research_assistant/configs/config.yml \
+  --host 0.0.0.0 \
+  --port 8000
+
+멀티턴 대화 테스트:
+
+bash
+Copy
+# 첫 번째 메시지
+curl -X POST http://localhost:8000/generate \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "messages": [{"role": "user", "content": "에베레스트 산의 높이가 몇 피트야?"}],
+    "user_id": "user-001"
+  }'
+
+# 두 번째 메시지 (이전 대화 컨텍스트 유지)
+curl -X POST http://localhost:8000/generate \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "messages": [
+      {"role": "user", "content": "에베레스트 산의 높이가 몇 피트야?"},
+      {"role": "assistant", "content": "에베레스트 산의 높이는 8,848.86미터로, 피트로 변환하면 약 29,031.7 피트입니다."},
+      {"role": "user", "content": "그럼 K2는?"}
+    ],
+    "user_id": "user-001"
+  }'
+
+user_id 필드: auto_memory_agent는 user_id를 기반으로 사용자별 독립된 메모리를 관리합니다. 멀티테넌트 환경에서 서로 다른 사용자의 대화 기록이 섞이지 않습니다.
+
+Step 7: MCP 서버로 노출
+
+완성된 리서치 어시스턴트 워크플로우를 MCP 서버로 게시하면, Claude Desktop, Cursor 등 MCP를 지원하는 모든 클라이언트에서 이 에이전트를 도구로 사용할 수 있습니다.
+
+bash
+Copy
+# MCP 서버로 시작
+nat mcp \
+  --config_file research-assistant/src/nat_research_assistant/configs/config.yml \
+  --host 0.0.0.0 \
+  --port 9901 \
+  --name "Research Assistant MCP"
+
+서버가 시작되면 노출된 도구 목록 확인:
+
+bash
+Copy
+nat mcp client tool list --url http://localhost:9901/mcp
+# → research_assistant 도구가 목록에 나타남
+
+# 전체 스키마 포함 상세 조회
+nat mcp client tool list --url http://localhost:9901/mcp --detail
+
+다른 NAT 워크플로우에서 이 MCP 서버를 클라이언트로 연결:
+
+yaml
+Copy
+# 다른 에이전트의 config.yml
+function_groups:
+  research_tools:
+    _type: mcp_client
+    server:
+      transport: streamable-http
+      url: "http://localhost:9901/mcp"
+    # include 없이 모든 도구를 사용하거나, 특정 도구만 지정 가능
+Step 8: A2A 서버로 노출
+
+참고 예제: examples/A2A/math_assistant_a2a — A2A 클라이언트/서버 패턴의 공식 레퍼런스
+
+A2A(Agent-to-Agent) 프로토콜을 사용하면 리서치 어시스턴트를 독립적인 에이전트로 게시하여, 다른 에이전트 시스템이 이 에이전트에 작업을 위임할 수 있습니다.
+
+bash
+Copy
+# A2A 서버로 시작
+nat a2a serve \
+  --config_file research-assistant/src/nat_research_assistant/configs/config.yml \
+  --host 0.0.0.0 \
+  --port 10000
+
+A2A 서버가 게시하는 Agent Card 확인 (A2A 클라이언트가 이 정보로 에이전트를 발견):
+
+bash
+Copy
+curl http://localhost:10000/.well-known/agent.json | python -m json.tool
+# → 에이전트의 능력(skills), 엔드포인트, 버전 정보 등이 반환됨
+
+다른 NAT 워크플로우에서 이 A2A 에이전트에 연결:
+
+yaml
+Copy
+# 오케스트레이터 에이전트의 config.yml
+function_groups:
+  research_agent:
+    _type: a2a_client
+    url: http://localhost:10000     # A2A 서버 주소
+    include_skills_in_description: true  # 에이전트의 skill을 도구 설명에 포함
+
+llms:
+  orchestrator_llm:
+    _type: nim
+    model_name: nvidia/nemotron-3-super-120b-a12b
+    temperature: 0.0
+
+workflow:
+  _type: react_agent
+  tool_names: [research_agent]     # A2A 에이전트를 도구로 사용
+  llm_name: orchestrator_llm
+  verbose: true
+전체 기능 통합 테스트
+
+4가지 기능이 모두 동작하는지 확인하는 시나리오:
+
+bash
+Copy
+# 1. 커스텀 함수 테스트: 단위 변환
+nat run --config_file .../config.yml \
+        --input "100 파운드를 킬로그램으로 환산해줘"
+# → unit_converter__weight 도구 호출
+
+# 2. MCP 도구 테스트: 시간 조회
+nat run --config_file .../config.yml \
+        --input "지금 몇 시야?"
+# → mcp_time__get_current_time_kst MCP 도구 호출
+
+# 3. 위키피디아 검색 테스트
+nat run --config_file .../config.yml \
+        --input "딥러닝의 역사에 대해 알려줘"
+# → wikipedia_search 도구 호출
+
+# 4. 메모리 테스트: 대화 기억
+nat run --config_file .../config.yml \
+        --input "나는 마라토너야. 내 기록은 서브-3이야."
+nat run --config_file .../config.yml \
+        --input "내 마라톤 목표 기록을 킬로미터당 페이스로 알려줘"
+# → 이전 대화에서 "서브-3 마라토너"를 기억해 응답
+4. Advanced Example #2: LangGraph Workflow를 NAT로 감싸기
+
+GitHub 참고 예제:
+
+Zero-code 래핑: examples/frameworks/auto_wrapper/langchain_deep_research
+커스텀 등록: examples/advanced_agents/alert_triage_agent
+
+목표: LangGraph StateGraph로 멀티에이전트 슈퍼바이저 워크플로우를 구성한 뒤, NAT로 감싸서 nat serve / MCP / A2A로 배포합니다.
+
+최종 아키텍처
+
+LangGraph StateGraph로 구성한 멀티에이전트 워크플로우를 NAT가 감싸서 HTTP API / MCP / A2A 엔드포인트로 노출합니다. 코드 변경 없이 YAML만으로 올리는 방식(langgraph_wrapper)과, NAT 관리 LLM·옵저버빌리티를 완전히 활용하는 커스텀 등록 방식(@register_function) 두 가지를 지원합니다.
+
+LangGraph × NAT 아키텍처
+       사용자 요청 (HTTP / MCP / A2A)
+                    │
+                    ▼
+┌───────────────────────────────────────┐
+│             NAT 래퍼                   │
+│                                       │
+│  ┌─────────────────────────────────┐  │
+│  │      LangGraph StateGraph       │  │
+│  │                                 │  │
+│  │  supervisor                     │  │
+│  │    ├── researcher               │  │
+│  │    ├── coder                    │  │
+│  │    └── ...                      │  │
+│  └─────────────────────────────────┘  │
+│                                       │
+└───────────────────────────────────────┘
+                    │
+                    ▼
+       ┌────────────────────────┐
+       │ HTTP API │ MCP │  A2A  │
+       └────────────────────────┘
+NAT × LangGraph 통합 방식
+방식	언제 사용	코드 변경
+langgraph_wrapper (내장 타입)	기존 LangGraph 에이전트를 그대로 NAT에 올릴 때	없음 (YAML만)
+@register_function (커스텀 등록)	NAT 관리 LLM·도구·옵저버빌리티를 함께 사용할 때	Python 등록 코드 필요
+
+NAT에서 도구·에이전트·워크플로우는 모두 "함수"로 관리됩니다. 커스텀 등록 시 FunctionBaseConfig + @register_function을 사용하며, name= 값이 YAML의 _type이 됩니다.
+
+방식 A: langgraph_wrapper — 코드 변경 없이 기존 에이전트 올리기
+
+기존에 동작하는 LangGraph 에이전트가 있다면 YAML 몇 줄로 NAT에 올릴 수 있습니다.
+
+bash
+Copy
+uv pip install "nvidia-nat[langchain]" langgraph
+yaml
+Copy
+# config.yml
+llms:
+  nim_llm:
+    _type: nim
+    model_name: nvidia/nemotron-3-nano-30b-a3b
+    temperature: 0.0
+
+workflow:
+  _type: langgraph_wrapper
+  dependencies:
+    - ./my_langgraph_agent/   # sys.path에 추가할 패키지 경로
+  graph: my_langgraph_agent.graph:compiled_graph  # module:변수명
+  env: .env
+bash
+Copy
+nat run --config_file config.yml --input "질문"
+nat serve --config_file config.yml  # HTTP API 서버로 바로 배포
+
+graph 필드는 LangGraph CLI의 --graph 인수와 동일한 형식입니다. compiled_graph는 graph.compile()로 만들어진 CompiledGraph 객체를 가리키는 변수명입니다.
+
+방식 B: @register_function — NAT 통합 멀티에이전트 LangGraph
+
+NAT가 LLM을 주입하고 옵저버빌리티·평가까지 연결되도록 LangGraph를 완전히 NAT에 통합합니다.
+
+예제 목표: Supervisor → Researcher / Coder 로 라우팅하는 멀티에이전트 그래프
+
+프로젝트 구조
+bash
+Copy
+# nat-examples/ 안에서 실행
+mkdir -p langgraph-supervisor/src/nat_lg_supervisor/configs
+
+touch langgraph-supervisor/pyproject.toml
+touch langgraph-supervisor/src/nat_lg_supervisor/__init__.py
+touch langgraph-supervisor/src/nat_lg_supervisor/register.py
+touch langgraph-supervisor/src/nat_lg_supervisor/configs/config.yml
+디렉토리 구조
+nat-examples/
+├── .venv/
+├── .env
+└── langgraph-supervisor/
+    ├── pyproject.toml
+    └── src/
+        └── nat_lg_supervisor/
+            ├── __init__.py
+            ├── register.py        # 커스텀 워크플로우 등록
+            └── configs/
+                └── config.yml
+Step 1: pyproject.toml
+toml
+Copy
+[build-system]
+requires = ["setuptools>=64"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[project]
+name = "nat-lg-supervisor"
+version = "0.1.0"
+requires-python = ">=3.11"
+dependencies = ["nvidia-nat[langchain]", "langgraph>=0.2"]
+
+[project.entry-points.'nat.components']
+nat_lg_supervisor = "nat_lg_supervisor.register"
+Step 2: register.py — LangGraph StateGraph + NAT 등록
+python
+Copy
+# src/nat_lg_supervisor/register.py
+
+from __future__ import annotations
+from typing import Annotated, Literal
+from collections.abc import AsyncGenerator
+
+from pydantic import Field
+from langchain_core.messages import HumanMessage, SystemMessage
+from langgraph.graph import StateGraph, MessagesState, START, END
+
+from nat.cli.register_workflow import register_function
+from nat.data_models.function import FunctionBaseConfig
+from nat.builder.function_info import FunctionInfo
+from nat.builder.builder import Builder
+from nat.builder.framework_enum import LLMFrameworkEnum
+from nat.data_models.component_ref import LLMRef
+
+
+# ① Config 클래스: name="lg_supervisor" → YAML의 _type 값
+class LGSupervisorConfig(FunctionBaseConfig, name="lg_supervisor"):
+    llm_name: LLMRef
+
+
+# ② @register_function 데코레이터로 NAT에 등록
+#    framework_wrappers=[LLMFrameworkEnum.LANGCHAIN] → NAT가 LangChain 호환 LLM 객체를 주입
+@register_function(
+    config_type=LGSupervisorConfig,
+    framework_wrappers=[LLMFrameworkEnum.LANGCHAIN],
+)
+async def lg_supervisor(
+    config: LGSupervisorConfig, builder: Builder
+) -> AsyncGenerator[FunctionInfo, None]:
+    """LangGraph 멀티에이전트 슈퍼바이저 워크플로우."""
+
+    # ③ NAT Builder를 통해 LangChain 호환 LLM 획득
+    llm = await builder.get_llm(
+        config.llm_name, wrapper_type=LLMFrameworkEnum.LANGCHAIN
+    )
+
+    # ─ 노드 함수 정의 ──────────────────────────────────────
+    async def supervisor_node(state: MessagesState) -> dict:
+        """사용자 질문을 분석해 researcher 또는 coder로 라우팅."""
+        sys_msg = SystemMessage(content=(
+            "당신은 멀티에이전트 슈퍼바이저입니다.\n"
+            "질문이 코드 작성에 관한 것이면 정확히 'ROUTE:coder'라고만 답하세요.\n"
+            "정보 검색에 관한 것이면 정확히 'ROUTE:researcher'라고만 답하세요.\n"
+            "다른 말은 절대 붙이지 마세요."
+        ))
+        response = await llm.ainvoke([sys_msg] + state["messages"])
+        return {"messages": [response]}
+
+    async def researcher_node(state: MessagesState) -> dict:
+        """Wikipedia 등 외부 지식을 검색해 답변."""
+        sys_msg = SystemMessage(content="당신은 정보 검색 전문가입니다. 질문에 대해 상세히 조사해 최종 답변을 작성하세요.")
+        # 마지막 사용자 메시지만 전달 (supervisor 라우팅 메시지 제외)
+        user_msgs = [m for m in state["messages"] if m.type == "human"]
+        response = await llm.ainvoke([sys_msg] + user_msgs)
+        return {"messages": [response]}
+
+    async def coder_node(state: MessagesState) -> dict:
+        """Python 코드를 생성해 답변."""
+        sys_msg = SystemMessage(content="당신은 Python 전문 개발자입니다. 깔끔하고 잘 주석된 코드로 최종 답변을 작성하세요.")
+        user_msgs = [m for m in state["messages"] if m.type == "human"]
+        response = await llm.ainvoke([sys_msg] + user_msgs)
+        return {"messages": [response]}
+
+    def route_supervisor(state: MessagesState) -> Literal["researcher", "coder", "__end__"]:
+        """'ROUTE:xxx' 패턴으로 다음 노드를 결정."""
+        last = state["messages"][-1].content.strip()
+        if "ROUTE:coder" in last:
+            return "coder"
+        elif "ROUTE:researcher" in last:
+            return "researcher"
+        return "__end__"
+
+    # ─ StateGraph 구성: supervisor가 한 번 라우팅 → 워커 실행 → END ─
+    #
+    #   START → supervisor ──(ROUTE:researcher)──→ researcher → END
+    #                      ──(ROUTE:coder)──────→ coder      → END
+    #                      ──(그 외)────────────→ END
+    #
+    # 워커 노드가 supervisor로 돌아오지 않으므로 recursion_limit 오류 없음
+    graph = StateGraph(MessagesState)
+    graph.add_node("supervisor", supervisor_node)
+    graph.add_node("researcher", researcher_node)
+    graph.add_node("coder",      coder_node)
+
+    graph.add_edge(START, "supervisor")
+    graph.add_conditional_edges("supervisor", route_supervisor)
+    graph.add_edge("researcher", END)  # 작업 완료 후 바로 종료
+    graph.add_edge("coder",      END)  # 작업 완료 후 바로 종료
+
+    agent = graph.compile()
+
+    # ④ NAT가 호출할 최종 함수
+    async def _run(input_message: str) -> str:
+        result = await agent.ainvoke(
+            {"messages": [HumanMessage(content=input_message)]}
+        )
+        return result["messages"][-1].content
+
+    # ⑤ FunctionInfo.from_fn()으로 래핑해서 yield
+    yield FunctionInfo.from_fn(_run, description=lg_supervisor.__doc__)
+
+코드 핵심 포인트:
+
+FunctionBaseConfig(name="lg_supervisor") → YAML _type: lg_supervisor에 매핑
+builder.get_llm(..., wrapper_type=LLMFrameworkEnum.LANGCHAIN) → YAML llm_name이 가리키는 LLM을 LangChain 호환 객체로 주입
+노드 함수들이 async def이므로 ainvoke로 비동기 실행
+FunctionInfo.from_fn(_run) → NAT가 이 함수를 워크플로우로 인식
+Step 3: config.yml
+yaml
+Copy
+# langgraph-supervisor/src/nat_lg_supervisor/configs/config.yml
+
+llms:
+  nim_llm:
+    _type: nim
+    model_name: nvidia/nemotron-3-nano-30b-a3b
+    temperature: 0.0
+    max_tokens: 1024
+
+# 커스텀 LangGraph 워크플로우를 workflow 섹션에서 참조
+workflow:
+  _type: lg_supervisor          # FunctionBaseConfig의 name= 값과 일치
+  llm_name: nim_llm
+Step 4: 패키지 설치 및 실행
+bash
+Copy
+# 패키지 개발 모드 설치 (entry_points 등록)
+uv pip install -e langgraph-supervisor/
+
+# 단일 쿼리 실행
+nat run \
+  --config_file langgraph-supervisor/src/nat_lg_supervisor/configs/config.yml \
+  --input "피보나치 수열을 파이썬으로 구현하고 성능도 비교해줘"
+# → supervisor가 coder로 라우팅 → Python 코드 생성
+
+nat run \
+  --config_file langgraph-supervisor/src/nat_lg_supervisor/configs/config.yml \
+  --input "LangGraph가 무엇인지 설명해줘"
+# → supervisor가 researcher로 라우팅 → 정보 조사 후 답변
+Step 5: HTTP API 서버 / MCP 서버로 배포
+
+NAT 래핑 덕분에 LangGraph 워크플로우를 추가 코드 없이 서버로 바로 노출합니다.
+
+bash
+Copy
+# HTTP API 서버
+nat serve \
+  --config_file langgraph-supervisor/src/nat_lg_supervisor/configs/config.yml \
+  --host 0.0.0.0 \
+  --port 8000
+
+# curl 테스트
+curl -X POST http://localhost:8000/generate \
+  -H 'Content-Type: application/json' \
+  -d '{"messages": [{"role": "user", "content": "퀵소트 알고리즘을 파이썬으로 구현해줘"}]}'
+
+# MCP 서버 (Claude Desktop / Cursor 등에서 이 에이전트를 도구로 사용 가능)
+nat mcp \
+  --config_file langgraph-supervisor/src/nat_lg_supervisor/configs/config.yml \
+  --port 9902 \
+  --name "LangGraph Supervisor"
+방식 A vs B 비교 요약
+	langgraph_wrapper (A)	@register_function (B)
+코드 변경	없음	register.py 작성 필요
+NAT 관리 LLM	✗ (graph 내부에서 직접 초기화)	✅ builder.get_llm()
+YAML 파라미터 주입	제한적	✅ FunctionBaseConfig 필드 전체
+옵저버빌리티 / Eval	제한적	✅ 완전 통합
+기존 에이전트 재활용	✅ 최적	새로 작성 필요
+권장 상황	PoC, 기존 코드 이전	프로덕션, 세밀한 제어 필요 시
+5. Supplements
+내장 도구 목록
+
+NAT에는 설치 즉시 사용 가능한 내장 도구들이 포함되어 있습니다. nat info components 명령으로 현재 환경에 등록된 모든 컴포넌트를 조회할 수 있습니다.
+
+bash
+Copy
+# function 타입의 컴포넌트만 필터링해서 조회
+nat info components -t function
+
+# 특정 키워드로 검색 (예: 검색 관련 도구만)
+nat info components -t function -q "search"
+
+# 결과를 파일로 저장
+nat info components -t function -o available_functions.txt
+
+출력 컬럼 의미:
+
+컬럼	설명
+package	해당 도구가 속한 Python 패키지
+version	패키지 버전
+component_name	YAML _type 필드에 입력할 값
+description	도구 설명 및 주요 파라미터
+
+기본 패키지 (nvidia-nat) — 항상 사용 가능:
+
+_type	설명	주요 파라미터
+current_datetime	현재 날짜·시간 반환 (타임존 지원)	—
+current_timezone	현재 타임존 이름 반환	—
+chat_completion	LLM 직접 호출 (멀티턴 대화)	llm_name
+code_execution	Python 코드 샌드박스 실행	sandbox_type, timeout
+add_memory	메모리 플랫폼에 항목 저장	memory
+get_memory	메모리에서 관련 항목 검색	memory
+delete_memory	메모리 항목 삭제	memory
+nvidia_rag	NVIDIA RAG 서비스 쿼리	base_url, collection_name
+nat_retriever	설정된 벡터스토어 검색	retriever
+github (group)	GitHub 이슈·PR·커밋 조작	repo_name
+
+LangChain 패키지 (nvidia-nat[langchain]) — extras 설치 시 사용 가능:
+
+_type	설명	주요 파라미터
+wiki_search	Wikipedia 검색	max_results
+code_generation	LLM 기반 코드 생성	llm_name, programming_language
+tavily_internet_search	Tavily 웹 검색	max_results, search_depth
+webpage_query	특정 URL 페이지 시맨틱 검색	webpage_url, embedder_name
+주요 CLI 명령어
+bash
+Copy
+# 단일 쿼리 실행
+nat run --config_file config.yml --input "질문"
+
+# HTTP API 서버 시작
+nat serve --config_file config.yml [--host 0.0.0.0] [--port 8000]
+
+# MCP 서버로 게시
+nat mcp --config_file config.yml [--port 9901] [--name "My Agent"]
+
+# A2A 서버로 게시
+nat a2a serve --config_file config.yml [--port 10000]
+
+# Config 유효성 검사
+nat validate --config_file config.yml
+
+# 평가 실행
+nat eval --config_file config.yml
+LLM Provider
+yaml
+Copy
+llms:
+  # ── NVIDIA NIM (클라우드 API) ────────────────────────────────────────────
+  nim_model:
+    _type: nim
+    model_name: nvidia/nemotron-3-super-120b-a12b
+    api_key: ${NVIDIA_API_KEY}
+    # base_url 기본값: NVIDIA Build API (https://integrate.api.nvidia.com/v1)
+    # NIM_BASE_URL 환경변수를 설정하지 않으면 클라우드 API를 사용
+    base_url: ${NIM_BASE_URL:-"https://integrate.api.nvidia.com/v1"}
+
+  # ── NVIDIA NIM (Self-hosted) ─────────────────────────────────────────────
+  # 사내 서버 또는 로컬에 NIM 컨테이너를 직접 배포한 경우:
+  #   1. NIM 컨테이너 실행:
+  #        docker run --gpus all -p 8000:8000 \
+  #          -e NGC_API_KEY=${NGC_API_KEY} \
+  #          nvcr.io/nim/nvidia/nemotron-3-super-120b-a12b:latest
+  #   2. base_url을 해당 서버의 OpenAI-compatible 엔드포인트로 지정:
+  #        export NIM_BASE_URL=http://localhost:8000/v1
+  #      또는 config.yml에 직접 하드코딩:
+  nim_self_hosted:
+    _type: nim
+    model_name: nvidia/nemotron-3-super-120b-a12b
+    # Self-hosted NIM은 API 인증을 하지 않으므로 api_key는 아무 값이나 넣어도 됨
+    api_key: "not-required"
+    base_url: http://localhost:8000/v1  # NIM 컨테이너 주소로 변경
+
+  # ── OpenAI ──────────────────────────────────────────────────────────────
+  openai_model:
+    _type: openai
+    model_name: gpt-4o
+    api_key: ${OPENAI_API_KEY}
+
+  # ── Azure OpenAI ────────────────────────────────────────────────────────
+  azure_model:
+    _type: azure_openai
+    model_name: gpt-4o
+    api_key: ${AZURE_OPENAI_API_KEY}
+    azure_endpoint: ${AZURE_OPENAI_ENDPOINT}   # e.g. https://.openai.azure.com
+    azure_deployment: ${AZURE_OPENAI_DEPLOYMENT}
+    api_version: "2024-08-01-preview"
+
+  # ── Anthropic ───────────────────────────────────────────────────────────
+  anthropic_model:
+    _type: anthropic
+    model_name: claude-3-5-sonnet-20241022
+    api_key: ${ANTHROPIC_API_KEY}
+
+  # ── Google Gemini ────────────────────────────────────────────────────────
+  gemini_model:
+    _type: google
+    model_name: gemini-2.0-flash
+    api_key: ${GOOGLE_API_KEY}
+
+  # ── Ollama (로컬 LLM) ────────────────────────────────────────────────────
+  # Ollama 서버를 로컬에서 실행 중인 경우 (ollama serve):
+  # Self-hosted와 마찬가지로 api_key는 아무 값이나 넣어도 됨
+  ollama_model:
+    _type: openai          # Ollama는 OpenAI-compatible API를 제공
+    model_name: llama3.1
+    api_key: "ollama"
+    base_url: http://localhost:11434/v1
+
+  # ── AWS Bedrock ─────────────────────────────────────────────────────────
+  bedrock_model:
+    _type: bedrock
+    model_name: anthropic.claude-3-5-sonnet-20241022-v2:0
+    region: us-east-1
+참고 자료
+문서	URL
+NeMo Agent Toolkit 공식 문서	https://docs.nvidia.com/nemo/agent-toolkit/latest/
+NeMo Agent Toolkit GitHub	https://github.com/NVIDIA/NeMo-Agent-Toolkit
+커스텀 함수 확장 가이드	https://docs.nvidia.com/nemo/agent-toolkit/latest/extend/custom-components/custom-functions/functions.html
+MCP 클라이언트 가이드	https://docs.nvidia.com/nemo/agent-toolkit/latest/build-workflows/mcp-client.html
+Mem0 메모리 통합	https://docs.mem0.ai
+LangGraph 공식 문서	https://docs.langchain.com/oss/python/langgraph/overview
+LangGraph 개념 가이드 (Multi-agent)	https://docs.langchain.com/oss/python/langgraph/graph-api
+LangGraph Supervisor 패턴 튜토리얼	https://docs.langchain.com/oss/python/langgraph/workflows-agents
+NAT × LangGraph 예제 (langgraph_wrapper)	https://github.com/NVIDIA/NeMo-Agent-Toolkit/tree/develop/examples/frameworks/auto_wrapper/langchain_deep_research
+LangChain 공식 문서	https://docs.langchain.com/oss/python/langchain/overview
