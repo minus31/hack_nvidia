@@ -1,0 +1,17 @@
+[project]
+name = "hack-nvidia"
+version = "0.1.0"
+description = "Add your description here"
+requires-python = ">=3.10"
+dependencies = [
+    "beautifulsoup4>=4.14.3",
+    "cudf-cu12",
+    "data-designer>=0.5.7",
+    "datasketch>=1.10.0",
+    "fasttext-wheel>=0.9.2",
+    "ftfy>=6.3.1",
+    "openai>=2.32.0",
+    "python-dotenv>=1.2.2",
+    "requests>=2.33.1",
+    "sentencepiece>=0.2.1",
+]

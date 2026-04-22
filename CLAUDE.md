@@ -9,6 +9,20 @@
 
 ## Key Tools
 
+### NIM server
+- CURL command
+```
+curl -X 'POST' \
+'http://0.0.0.0:8000/v1/chat/completions' \
+-H 'accept: application/json' \
+-H 'Content-Type: application/json' \
+-d '{
+    "model": "nvidia/nemotron-3-nano",
+    "messages": [{"role":"user", "content":"Which number is larger, 9.11 or 9.8?"}],
+    "max_tokens": 64
+}'
+```
+
 ### NeMo Data Designer — Synthetic data generation
 - Install: `pip install data-designer`
 - Docs: https://nvidia-nemo.github.io/DataDesigner/latest/

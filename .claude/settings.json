@@ -7,10 +7,16 @@
       "WebFetch(domain:nvidia-nemo.github.io)",
       "Bash(node scrape_tabs.js)",
       "Bash(npm install playwright --prefix /Users/hyunkim/Desktop/dev/2026/hack_nvidia)",
-      "Bash(npx playwright install chromium)"
+      "Bash(npx playwright install chromium)",
+      "WebFetch(domain:www.harmbench.org)",
+      "WebFetch(domain:www.emergentmind.com)",
+      "WebFetch(domain:www.promptfoo.dev)",
+      "WebFetch(domain:github.com)",
+      "Bash(python3 -c \":*)"
     ],
     "additionalDirectories": [
-      "/Users/hyunkim/Desktop/dev/2026/hack_nvidia/docs/track_c"
+      "/Users/hyunkim/Desktop/dev/2026/hack_nvidia/docs/track_c",
+      "/Users/hyunkim/Desktop/dev/2026/hack_nvidia/src"
     ]
   }
 }
